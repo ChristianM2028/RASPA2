@@ -6499,6 +6499,7 @@ void PrintPostSimulationStatus(void)
     fprintf(FilePtr,"===========================================================================\n");
     fprintf(FilePtr,"\n");
     PrintSmallMCAddStatistics(FilePtr);
+    PrintFirstBeadSelectionStatistics(FilePtr);
     PrintTranslationStatistics(FilePtr);
     PrintRandomTranslationStatistics(FilePtr);
     PrintRotationStatistics(FilePtr);
