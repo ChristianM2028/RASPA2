@@ -747,7 +747,11 @@ static int BuildFirstBeadMixtureProbabilities(REAL *SoftLogWeight,REAL *MixtureP
 
 int HandleFirstBead(int Switch)
 {
-  int i,selected_index,type,start,mode;
+  int i,type,start,mode;
+  int SelectedFirstBeadIndex;
+  int CoordinateCopyIndex,EnergyCopyIndex;
+  int ExistingFirstBeadIndex;
+  int SoftFilterBiasApplied;
   int NumberOfFirstPositions;
   int NumberOfValidPositions;
   int NumberOfRejectedPositions;
@@ -761,9 +765,13 @@ int HandleFirstBead(int Switch)
   POINT posA,s;
   static REAL StoredR;
 
-  mode=UseFirstBeadSoftFilter?FIRST_BEAD_SOFT_FILTER_MODE:FIRST_BEAD_BASELINE_MODE;
+  mode=((Switch==CBMC_INSERTION)&&UseFirstBeadSoftFilter)?FIRST_BEAD_SOFT_FILTER_MODE:FIRST_BEAD_BASELINE_MODE;
   LastFirstBeadSelectedIndex=-1;
-  selected_index=0;
+  ExistingFirstBeadIndex=0;
+  SelectedFirstBeadIndex=ExistingFirstBeadIndex;
+  CoordinateCopyIndex=ExistingFirstBeadIndex;
+  EnergyCopyIndex=ExistingFirstBeadIndex;
+  SoftFilterBiasApplied=FALSE;
   time0=get_wall_time();
   OVERLAP=TRUE;
   RosenBluthFactorFirstBead=0.0;
@@ -781,7 +789,7 @@ int HandleFirstBead(int Switch)
   // CBMC_RETRACE_REINSERTION: 'Trial[0]=FirstBeadPosition'
 
   if((Switch==CBMC_PARTIAL_INSERTION)||(Switch==CBMC_RETRACE_REINSERTION)) NumberOfFirstPositions=1;
-  else if(mode==FIRST_BEAD_SOFT_FILTER_MODE) NumberOfFirstPositions=MIN2(NumberOfFirstBeadSoftFilterCandidates,MaxNumberOfTrialPositionsForTheFirstBead);
+  else if((Switch==CBMC_INSERTION)&&(mode==FIRST_BEAD_SOFT_FILTER_MODE)) NumberOfFirstPositions=MIN2(NumberOfFirstBeadSoftFilterCandidates,MaxNumberOfTrialPositionsForTheFirstBead);
   else NumberOfFirstPositions=NumberOfTrialPositionsForTheFirstBead;
 
   if(Switch==CBMC_INSERTION)
@@ -931,7 +939,7 @@ int HandleFirstBead(int Switch)
   }
 
   // compute w_1 from the same (possibly corrected) log-weights used to select first-bead candidates.
-  if((mode==FIRST_BEAD_SOFT_FILTER_MODE)&&(NumberOfFirstPositions>1))
+  if((Switch==CBMC_INSERTION)&&(mode==FIRST_BEAD_SOFT_FILTER_MODE)&&(NumberOfFirstPositions>1))
   {
     int NumberOfValid;
     REAL max_log,sum_exp,uniform_probability;
@@ -1006,6 +1014,7 @@ int HandleFirstBead(int Switch)
         }
       }
     }
+    SoftFilterBiasApplied=TRUE;
 #ifdef DEBUG
     fprintf(stderr,"CBMC first-bead mixture proposal: alpha=%g lambda=%g valid=%d\n",(double)alpha,(double)lambda,NumberOfValid);
     for(i=0;i<NumberOfFirstPositions;i++)
@@ -1029,26 +1038,36 @@ int HandleFirstBead(int Switch)
   RosenBluthFactorFirstBead=ComputeSumRosenbluthWeight(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
   if(Switch==CBMC_INSERTION)
   {
-    selected_index=SelectTrialPosition(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
-    SelectedLogWeight=FirstBeadModifiedBoltzmannFactor[selected_index];
+    SelectedFirstBeadIndex=SelectTrialPosition(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
+    SelectedLogWeight=FirstBeadModifiedBoltzmannFactor[SelectedFirstBeadIndex];
 
     // r=w_1(n)-exp(-beta U_1[h_n]) Eq.16 from Esselink et al.
-    StoredR=RosenBluthFactorFirstBead-exp(FirstBeadModifiedBoltzmannFactor[selected_index]);
+    StoredR=RosenBluthFactorFirstBead-exp(FirstBeadModifiedBoltzmannFactor[SelectedFirstBeadIndex]);
   }
   else if(Switch==CBMC_RETRACE_REINSERTION)
   {
     // for retrace the first trial position is always "chosen"
-    selected_index=0;
+    SelectedFirstBeadIndex=ExistingFirstBeadIndex;
 
     // w_1(o)=exp(-beta u_1(0)+r  Eq. 18 from Esselink et al.
     RosenBluthFactorFirstBead+=StoredR;
   }
   else
   {
-    selected_index=0;
+    SelectedFirstBeadIndex=ExistingFirstBeadIndex;
   }
 
-  LastFirstBeadSelectedIndex=selected_index;
+  CoordinateCopyIndex=SelectedFirstBeadIndex;
+  EnergyCopyIndex=SelectedFirstBeadIndex;
+  LastFirstBeadSelectedIndex=SelectedFirstBeadIndex;
+
+#ifdef DEBUG
+  fprintf(stderr,
+          "CBMC first-bead indices: switch=%d selected_forward=%d retrace_or_reverse=%d coord_copy=%d energy_copy=%d soft_filter_bias_applied=%d\n",
+          Switch,(Switch==CBMC_INSERTION)?SelectedFirstBeadIndex:-1,
+          (Switch!=CBMC_INSERTION)?SelectedFirstBeadIndex:-1,
+          CoordinateCopyIndex,EnergyCopyIndex,SoftFilterBiasApplied);
+#endif
 
   if(Switch==CBMC_INSERTION)
   {
@@ -1067,20 +1086,20 @@ int HandleFirstBead(int Switch)
     }
   }
   // update positions and energies
-  FirstBeadPosition=Trial[selected_index];
+  FirstBeadPosition=Trial[CoordinateCopyIndex];
 
-  EnergyHostVDWFirstBead=EnergiesHostVDW[selected_index];
-  EnergyAdsorbateVDWFirstBead=EnergiesAdsorbateVDW[selected_index];
+  EnergyHostVDWFirstBead=EnergiesHostVDW[EnergyCopyIndex];
+  EnergyAdsorbateVDWFirstBead=EnergiesAdsorbateVDW[EnergyCopyIndex];
   
-  EnergyCationVDWFirstBead=EnergiesCationVDW[selected_index];
+  EnergyCationVDWFirstBead=EnergiesCationVDW[EnergyCopyIndex];
 
-  EnergyHostChargeChargeFirstBead=EnergiesHostChargeCharge[selected_index];
-  EnergyAdsorbateChargeChargeFirstBead=EnergiesAdsorbateChargeCharge[selected_index];
-  EnergyCationChargeChargeFirstBead=EnergiesCationChargeCharge[selected_index];
+  EnergyHostChargeChargeFirstBead=EnergiesHostChargeCharge[EnergyCopyIndex];
+  EnergyAdsorbateChargeChargeFirstBead=EnergiesAdsorbateChargeCharge[EnergyCopyIndex];
+  EnergyCationChargeChargeFirstBead=EnergiesCationChargeCharge[EnergyCopyIndex];
 
-  EnergyHostChargeBondDipoleFirstBead=EnergiesHostChargeBondDipole[selected_index];
-  EnergyAdsorbateChargeBondDipoleFirstBead=EnergiesAdsorbateChargeBondDipole[selected_index];
-  EnergyCationChargeBondDipoleFirstBead=EnergiesCationChargeBondDipole[selected_index];
+  EnergyHostChargeBondDipoleFirstBead=EnergiesHostChargeBondDipole[EnergyCopyIndex];
+  EnergyAdsorbateChargeBondDipoleFirstBead=EnergiesAdsorbateChargeBondDipole[EnergyCopyIndex];
+  EnergyCationChargeBondDipoleFirstBead=EnergiesCationChargeBondDipole[EnergyCopyIndex];
 
   EnergyHostBondDipoleBondDipoleFirstBead=0.0;
   EnergyAdsorbateBondDipoleBondDipoleFirstBead=0.0;
