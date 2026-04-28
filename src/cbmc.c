@@ -747,7 +747,7 @@ static int BuildFirstBeadMixtureProbabilities(REAL *SoftLogWeight,REAL *MixtureP
 
 int HandleFirstBead(int Switch)
 {
-  int i,type,start,mode;
+  int i,selected_index,type,start,mode;
   int NumberOfFirstPositions;
   int NumberOfValidPositions;
   int NumberOfRejectedPositions;
@@ -763,6 +763,7 @@ int HandleFirstBead(int Switch)
 
   mode=UseFirstBeadSoftFilter?FIRST_BEAD_SOFT_FILTER_MODE:FIRST_BEAD_BASELINE_MODE;
   LastFirstBeadSelectedIndex=-1;
+  selected_index=0;
   time0=get_wall_time();
   OVERLAP=TRUE;
   RosenBluthFactorFirstBead=0.0;
@@ -1028,26 +1029,26 @@ int HandleFirstBead(int Switch)
   RosenBluthFactorFirstBead=ComputeSumRosenbluthWeight(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
   if(Switch==CBMC_INSERTION)
   {
-    i=SelectTrialPosition(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
-    SelectedLogWeight=FirstBeadModifiedBoltzmannFactor[i];
+    selected_index=SelectTrialPosition(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
+    SelectedLogWeight=FirstBeadModifiedBoltzmannFactor[selected_index];
 
     // r=w_1(n)-exp(-beta U_1[h_n]) Eq.16 from Esselink et al.
-    StoredR=RosenBluthFactorFirstBead-exp(FirstBeadModifiedBoltzmannFactor[i]);
+    StoredR=RosenBluthFactorFirstBead-exp(FirstBeadModifiedBoltzmannFactor[selected_index]);
   }
   else if(Switch==CBMC_RETRACE_REINSERTION)
   {
     // for retrace the first trial position is always "chosen"
-    i=0;
+    selected_index=0;
 
     // w_1(o)=exp(-beta u_1(0)+r  Eq. 18 from Esselink et al.
     RosenBluthFactorFirstBead+=StoredR;
   }
   else
   {
-    i=0;
+    selected_index=0;
   }
 
-  LastFirstBeadSelectedIndex=i;
+  LastFirstBeadSelectedIndex=selected_index;
 
   if(Switch==CBMC_INSERTION)
   {
@@ -1066,20 +1067,20 @@ int HandleFirstBead(int Switch)
     }
   }
   // update positions and energies
-  FirstBeadPosition=Trial[i];
+  FirstBeadPosition=Trial[selected_index];
 
-  EnergyHostVDWFirstBead=EnergiesHostVDW[i];
-  EnergyAdsorbateVDWFirstBead=EnergiesAdsorbateVDW[i];
+  EnergyHostVDWFirstBead=EnergiesHostVDW[selected_index];
+  EnergyAdsorbateVDWFirstBead=EnergiesAdsorbateVDW[selected_index];
   
-  EnergyCationVDWFirstBead=EnergiesCationVDW[i];
+  EnergyCationVDWFirstBead=EnergiesCationVDW[selected_index];
 
-  EnergyHostChargeChargeFirstBead=EnergiesHostChargeCharge[i];
-  EnergyAdsorbateChargeChargeFirstBead=EnergiesAdsorbateChargeCharge[i];
-  EnergyCationChargeChargeFirstBead=EnergiesCationChargeCharge[i];
+  EnergyHostChargeChargeFirstBead=EnergiesHostChargeCharge[selected_index];
+  EnergyAdsorbateChargeChargeFirstBead=EnergiesAdsorbateChargeCharge[selected_index];
+  EnergyCationChargeChargeFirstBead=EnergiesCationChargeCharge[selected_index];
 
-  EnergyHostChargeBondDipoleFirstBead=EnergiesHostChargeBondDipole[i];
-  EnergyAdsorbateChargeBondDipoleFirstBead=EnergiesAdsorbateChargeBondDipole[i];
-  EnergyCationChargeBondDipoleFirstBead=EnergiesCationChargeBondDipole[i];
+  EnergyHostChargeBondDipoleFirstBead=EnergiesHostChargeBondDipole[selected_index];
+  EnergyAdsorbateChargeBondDipoleFirstBead=EnergiesAdsorbateChargeBondDipole[selected_index];
+  EnergyCationChargeBondDipoleFirstBead=EnergiesCationChargeBondDipole[selected_index];
 
   EnergyHostBondDipoleBondDipoleFirstBead=0.0;
   EnergyAdsorbateBondDipoleBondDipoleFirstBead=0.0;

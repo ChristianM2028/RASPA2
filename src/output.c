@@ -7276,7 +7276,7 @@ void PrintEnergyDriftStatus(FILE *FilePtr)
 
   if(fabs(UTotalRunning-UTotal[CurrentSystem])*ENERGY_TO_KELVIN>1e-2)
   {
-    if(NumberOfWarnings[NumberOfWarnings[CurrentSystem]]<MAX_NUMBER_OF_WARNINGS)
+    if(NumberOfWarnings[CurrentSystem]<MAX_NUMBER_OF_WARNINGS)
     {
       Warnings[CurrentSystem][NumberOfWarnings[CurrentSystem]]=ENERGY_DRIFT;
       NumberOfWarnings[CurrentSystem]++;
