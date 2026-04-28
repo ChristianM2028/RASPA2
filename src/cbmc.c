@@ -868,6 +868,16 @@ int HandleFirstBead(int Switch)
       CalculateInterChargeEnergyCationAtPosition(posA,type,&EnergyCationChargeCharge,&EnergyCationChargeBondDipole,CurrentCationMolecule,CFChargeScaling[start] * PseudoAtoms[type].Charge1);
     }
 
+#ifdef DEBUG
+    if((Switch==CBMC_INSERTION)||(Switch==CBMC_RETRACE_REINSERTION))
+    {
+      fprintf(stderr,
+              "CBMC first-bead candidate energy: switch=%d cand=%d pos=(%.12g,%.12g,%.12g) bead_type=%d cfvdw_scaling=%.12g host_vdw=%.12g adsorbate_vdw=%.12g\n",
+              Switch,i,(double)posA.x,(double)posA.y,(double)posA.z,type,(double)CFVDWScaling[start],
+              (double)EnergyHostVDW,(double)EnergyAdsorbateVDW);
+    }
+#endif
+
     if((EnergyHostVDW>=EnergyOverlapCriteria)||(EnergyHostChargeCharge>=EnergyOverlapCriteria)||
        (EnergyAdsorbateVDW>=EnergyOverlapCriteria)||(EnergyAdsorbateChargeCharge>=EnergyOverlapCriteria)||
        (EnergyCationVDW>=EnergyOverlapCriteria)||(EnergyCationChargeCharge>=EnergyOverlapCriteria))
@@ -1067,6 +1077,11 @@ int HandleFirstBead(int Switch)
           Switch,(Switch==CBMC_INSERTION)?SelectedFirstBeadIndex:-1,
           (Switch!=CBMC_INSERTION)?SelectedFirstBeadIndex:-1,
           CoordinateCopyIndex,EnergyCopyIndex,SoftFilterBiasApplied);
+  fprintf(stderr,
+          "CBMC first-bead commit: switch=%d cand=%d pos=(%.12g,%.12g,%.12g) committed_host_vdw=%.12g committed_adsorbate_vdw=%.12g\n",
+          Switch,EnergyCopyIndex,
+          (double)Trial[CoordinateCopyIndex].x,(double)Trial[CoordinateCopyIndex].y,(double)Trial[CoordinateCopyIndex].z,
+          (double)EnergiesHostVDW[EnergyCopyIndex],(double)EnergiesAdsorbateVDW[EnergyCopyIndex]);
 #endif
 
   if(Switch==CBMC_INSERTION)
@@ -3338,6 +3353,12 @@ REAL RetraceMolecule(int Iicode)
     
     UAdsorbateVDWOld[CurrentSystem]=EnergyAdsorbateVDWFirstBead;
     UHostVDWOld[CurrentSystem]=EnergyHostVDWFirstBead;
+#ifdef DEBUG
+    fprintf(stderr,
+            "CBMC first-bead retrace commit-to-old: switch=%d idx=%d pos=(%.12g,%.12g,%.12g) UHostVDWOld=%.12g UAdsorbateVDWOld=%.12g\n",
+            Iicode,LastFirstBeadSelectedIndex,(double)FirstBeadPosition.x,(double)FirstBeadPosition.y,(double)FirstBeadPosition.z,
+            (double)UHostVDWOld[CurrentSystem],(double)UAdsorbateVDWOld[CurrentSystem]);
+#endif
 
     UCationChargeChargeOld[CurrentSystem]=EnergyCationChargeChargeFirstBead;
     UAdsorbateChargeChargeOld[CurrentSystem]=EnergyAdsorbateChargeChargeFirstBead;
@@ -3470,6 +3491,12 @@ REAL GrowMolecule(int Iicode)
     UCationVDWNew[CurrentSystem]=EnergyCationVDWFirstBead;
     UAdsorbateVDWNew[CurrentSystem]=EnergyAdsorbateVDWFirstBead;
     UHostVDWNew[CurrentSystem]=EnergyHostVDWFirstBead;
+#ifdef DEBUG
+    fprintf(stderr,
+            "CBMC first-bead insertion commit-to-new: switch=%d idx=%d pos=(%.12g,%.12g,%.12g) UHostVDWNew=%.12g UAdsorbateVDWNew=%.12g\n",
+            Iicode,LastFirstBeadSelectedIndex,(double)FirstBeadPosition.x,(double)FirstBeadPosition.y,(double)FirstBeadPosition.z,
+            (double)UHostVDWNew[CurrentSystem],(double)UAdsorbateVDWNew[CurrentSystem]);
+#endif
 
     UCationChargeChargeNew[CurrentSystem]=EnergyCationChargeChargeFirstBead;
     UAdsorbateChargeChargeNew[CurrentSystem]=EnergyAdsorbateChargeChargeFirstBead;
