@@ -72,7 +72,7 @@ REAL CalculateFrameworkVDWEnergyAtPosition(POINT posA,int typeA,REAL scaling)
   {
     if((Framework[CurrentSystem].FrameworkModel==GRID)&&(VDWGrid[typeA]))   // grid-interpolating for rigid frameworks
     {
-      UVDW=InterpolateVDWGrid(typeA,posA);
+      UVDW=scaling*InterpolateVDWGrid(typeA,posA);
       return UVDW;
     }
     else if(UseCellLists[CurrentSystem]) // energy using cell-lists
@@ -2709,7 +2709,7 @@ int CalculateFrameworkAdsorbateVDWEnergy(void)
 
       if((Framework[CurrentSystem].FrameworkModel==GRID)&&(VDWGrid[typeA])&&(!IsFractionalAdsorbateMolecule(i)))
       {
-        UHostAdsorbateVDW[CurrentSystem]+=InterpolateVDWGrid(typeA,posA);
+        UHostAdsorbateVDW[CurrentSystem]+=scalingA*InterpolateVDWGrid(typeA,posA);
       }
       else
       {
@@ -2756,7 +2756,7 @@ int CalculateFrameworkAdsorbateVDWEnergy(void)
                 rr=SQR(dr.x)+SQR(dr.y)+SQR(dr.z);
 
                 if(rr<CutOffVDWSquared)
-                  UHostAdsorbateVDW[CurrentSystem]+=PotentialValue(typeA,typeB,rr,1.0);
+                  UHostAdsorbateVDW[CurrentSystem]+=PotentialValue(typeA,typeB,rr,scalingA);
 
                 k=Framework[CurrentSystem].CellList[f1][k];
               }
@@ -2861,7 +2861,7 @@ int CalculateFrameworkCationVDWEnergy(void)
                 rr=SQR(dr.x)+SQR(dr.y)+SQR(dr.z);
 
                 if(rr<CutOffVDWSquared)
-                  UHostCationVDW[CurrentSystem]+=PotentialValue(typeA,typeB,rr,1.0);
+                  UHostCationVDW[CurrentSystem]+=PotentialValue(typeA,typeB,rr,scalingA);
 
                 k=Framework[CurrentSystem].CellList[f1][k];
               }
@@ -4655,7 +4655,7 @@ int CalculateFrameworkAdsorbateReplicaVDWEnergy(void)
 
       if((Framework[CurrentSystem].FrameworkModel==GRID)&&(VDWGrid[typeA]))
       {
-        UHostAdsorbateVDW[CurrentSystem]+=InterpolateVDWGrid(typeA,posA);
+        UHostAdsorbateVDW[CurrentSystem]+=scaling*InterpolateVDWGrid(typeA,posA);
       }
       else
       {
@@ -4705,7 +4705,7 @@ int CalculateFrameworkCationReplicaVDWEnergy(void)
 
       if((Framework[CurrentSystem].FrameworkModel==GRID)&&(VDWGrid[typeA]))
       {
-        UHostCationVDW[CurrentSystem]+=InterpolateVDWGrid(typeA,posA);
+        UHostCationVDW[CurrentSystem]+=scaling*InterpolateVDWGrid(typeA,posA);
       }
       else
       {
@@ -7362,4 +7362,3 @@ REAL CalculateFrameworkVDWEnergyCorrection(VECTOR* Positions,VECTOR *Anisotropic
   }
   return UVDWDelta;
 }
-
