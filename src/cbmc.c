@@ -55,21 +55,28 @@
 #include "utils.h"
 #include "mc_moves.h"
 
+#ifndef CBMC_FIRST_BEAD_SOFT_FILTER
+#define CBMC_FIRST_BEAD_SOFT_FILTER FALSE
+#endif
+
+#ifndef CBMC_FIRST_BEAD_SOFT_FILTER_CANDIDATES
+#define CBMC_FIRST_BEAD_SOFT_FILTER_CANDIDATES 8
+#endif
+
+#ifndef CBMC_FIRST_BEAD_MIXTURE_ALPHA
+#define CBMC_FIRST_BEAD_MIXTURE_ALPHA 0.10
+#endif
+
+#ifndef CBMC_FIRST_BEAD_MIXTURE_LAMBDA
+#define CBMC_FIRST_BEAD_MIXTURE_LAMBDA 0.50
+#endif
+
 int BiasingMethod;
 
 static REAL RosenbluthNew;             // the new Rosenbluth weight (grow)
 static REAL RosenbluthOld;             // the old Rosenbluth weight (retrace)
 static REAL *RosenbluthTorsion;
 static REAL RosenBluthFactorFirstBead;
-static REAL *FirstBeadWallTime;
-static REAL *FirstBeadEnergyCalls;
-static REAL *FirstBeadSelectionAttempts;
-static REAL *FirstBeadCandidateTrials;
-static REAL *FirstBeadCandidateRejected;
-static REAL *FirstBeadCandidateValid;
-static REAL *FullCBMCInsertionAttempts;
-static REAL *FullCBMCInsertionAccepted;
-static REAL *FullCBMCInsertionWallTime;
 
 // Modified by Ambroise switch static to non-static
 //-------------------------------------------------------------------
@@ -106,6 +113,34 @@ REAL **CFChargeScalingRXMC;
 int OVERLAP;
 static REAL *BoltzmannFactors;
 static int *Overlap;
+enum{FIRST_BEAD_BASELINE_MODE,FIRST_BEAD_SOFT_FILTER_MODE,NUMBER_OF_FIRST_BEAD_MODES};
+static int UseFirstBeadSoftFilter=CBMC_FIRST_BEAD_SOFT_FILTER;
+static int NumberOfFirstBeadSoftFilterCandidates=CBMC_FIRST_BEAD_SOFT_FILTER_CANDIDATES;
+static REAL FirstBeadMixtureAlpha=(REAL)CBMC_FIRST_BEAD_MIXTURE_ALPHA;
+static REAL FirstBeadMixtureLambda=(REAL)CBMC_FIRST_BEAD_MIXTURE_LAMBDA;
+static REAL **FirstBeadSelectionAttempts;
+static REAL **FirstBeadCandidateTrials;
+static REAL **FirstBeadCandidateRejected;
+static REAL **FirstBeadCandidateValid;
+static REAL **FirstBeadSelectedLogWeightSum;
+static REAL **FirstBeadSelectedLogWeightCount;
+static REAL **FirstBeadLogSumWeightSum;
+static REAL **FirstBeadWeightSum;
+static REAL **FirstBeadEnergyCalls;
+static REAL **FirstBeadWallTime;
+static REAL **FirstBeadRetriesBeforeSuccess;
+static REAL **FirstBeadSuccessfulPlacements;
+static REAL **FirstBeadCurrentRetries;
+static REAL **FullCBMCInsertionAttempts;
+static REAL **FullCBMCInsertionAccepted;
+static REAL **FullCBMCInsertionWallTime;
+static REAL *FirstBeadFrameworkEnergy;
+static REAL *FirstBeadSoftLogWeight;
+static REAL *FirstBeadBoltzmannProbability;
+static REAL *FirstBeadMixedProbability;
+static REAL *FirstBeadLogCorrection;
+static REAL *FirstBeadModifiedBoltzmannFactor;
+static int LastFirstBeadSelectedIndex;
 
 int NumberOfTrialPositions;
 int NumberOfTrialPositionsForTheFirstBead;
@@ -603,6 +638,91 @@ int SelectTrialPosition(REAL *BoltzmannFactors,int *Overlap,int NumberOfTrialPos
   return selected;
 }
 
+static int BuildFirstBeadMixtureProbabilities(REAL *SoftLogWeight,REAL *MixtureProbability,int *Overlap,int NumberOfTrialPositions,REAL lambda,
+                                              REAL *LogSumWeight,REAL *SumWeight)
+{
+  int i;
+  int NumberOfValid;
+  REAL sum,max_log,sum_exp,lambda_local,uniform_probability;
+
+  NumberOfValid=0;
+  for(i=0;i<NumberOfTrialPositions;i++)
+    if(!Overlap[i]) NumberOfValid++;
+
+  if(NumberOfValid<=0) return 0;
+
+  lambda_local=lambda;
+  if(lambda_local<0.0) lambda_local=0.0;
+  if(lambda_local>1.0) lambda_local=1.0;
+
+  max_log=-DBL_MAX;
+  for(i=0;i<NumberOfTrialPositions;i++)
+  {
+    if(!Overlap[i]&&isfinite(SoftLogWeight[i]))
+      max_log=MAX2(max_log,SoftLogWeight[i]);
+  }
+
+  if(max_log<=-DBL_MAX/2.0)
+  {
+    for(i=0;i<NumberOfTrialPositions;i++)
+      FirstBeadBoltzmannProbability[i]=(!Overlap[i])?(1.0/(REAL)NumberOfValid):0.0;
+    *LogSumWeight=-DBL_MAX;
+    *SumWeight=0.0;
+  }
+  else
+  {
+    sum_exp=0.0;
+    for(i=0;i<NumberOfTrialPositions;i++)
+    {
+      if(!Overlap[i]&&isfinite(SoftLogWeight[i]))
+      {
+        FirstBeadBoltzmannProbability[i]=exp(SoftLogWeight[i]-max_log);
+        sum_exp+=FirstBeadBoltzmannProbability[i];
+      }
+      else FirstBeadBoltzmannProbability[i]=0.0;
+    }
+
+    if((sum_exp<=0.0)||(!isfinite(sum_exp)))
+    {
+      for(i=0;i<NumberOfTrialPositions;i++)
+        FirstBeadBoltzmannProbability[i]=(!Overlap[i])?(1.0/(REAL)NumberOfValid):0.0;
+      *LogSumWeight=-DBL_MAX;
+      *SumWeight=0.0;
+    }
+    else
+    {
+      for(i=0;i<NumberOfTrialPositions;i++)
+        if(!Overlap[i]) FirstBeadBoltzmannProbability[i]/=sum_exp;
+      *LogSumWeight=max_log+log(sum_exp);
+      *SumWeight=exp(*LogSumWeight);
+    }
+  }
+
+  uniform_probability=1.0/(REAL)NumberOfValid;
+  for(i=0;i<NumberOfTrialPositions;i++)
+  {
+    if(!Overlap[i])
+      MixtureProbability[i]=(1.0-lambda_local)*uniform_probability+lambda_local*FirstBeadBoltzmannProbability[i];
+    else
+      MixtureProbability[i]=0.0;
+  }
+
+  sum=0.0;
+  for(i=0;i<NumberOfTrialPositions;i++) sum+=MixtureProbability[i];
+  if((sum<=0.0)||(!isfinite(sum)))
+  {
+    for(i=0;i<NumberOfTrialPositions;i++)
+      MixtureProbability[i]=(!Overlap[i])?uniform_probability:0.0;
+    sum=1.0;
+  }
+  else
+  {
+    for(i=0;i<NumberOfTrialPositions;i++) MixtureProbability[i]/=sum;
+  }
+
+  return NumberOfValid;
+}
+
 /****************************************************************************************************************
  * Name       | HandleFirstBead                                                                                 *
  * ------------------------------------------------------------------------------------------------------------ *
@@ -627,18 +747,41 @@ int SelectTrialPosition(REAL *BoltzmannFactors,int *Overlap,int NumberOfTrialPos
 
 int HandleFirstBead(int Switch)
 {
-  int i,type,start;
+  int i,type,start,mode;
+  int SelectedFirstBeadIndex;
+  int CoordinateCopyIndex,EnergyCopyIndex;
+  int ExistingFirstBeadIndex;
+  int SoftFilterBiasApplied;
   int NumberOfFirstPositions;
+  int NumberOfValidPositions;
+  int NumberOfRejectedPositions;
   REAL EnergyHostVDW,EnergyAdsorbateVDW,EnergyCationVDW;
   REAL EnergyHostChargeCharge,EnergyAdsorbateChargeCharge,EnergyCationChargeCharge;
   REAL EnergyHostChargeBondDipole,EnergyAdsorbateChargeBondDipole,EnergyCationChargeBondDipole;
+  REAL SelectedLogWeight,SumWeight,LogSumWeight;
+  REAL FrameworkEnergy;
+  REAL alpha,lambda;
+  REAL time0;
   POINT posA,s;
   static REAL StoredR;
-  REAL time0;
 
+  mode=((Switch==CBMC_INSERTION)&&UseFirstBeadSoftFilter)?FIRST_BEAD_SOFT_FILTER_MODE:FIRST_BEAD_BASELINE_MODE;
+  LastFirstBeadSelectedIndex=-1;
+  ExistingFirstBeadIndex=0;
+  SelectedFirstBeadIndex=ExistingFirstBeadIndex;
+  CoordinateCopyIndex=ExistingFirstBeadIndex;
+  EnergyCopyIndex=ExistingFirstBeadIndex;
+  SoftFilterBiasApplied=FALSE;
   time0=get_wall_time();
   OVERLAP=TRUE;
   RosenBluthFactorFirstBead=0.0;
+  NumberOfValidPositions=0;
+  NumberOfRejectedPositions=0;
+  SelectedLogWeight=-DBL_MAX;
+  SumWeight=0.0;
+  LogSumWeight=-DBL_MAX;
+  alpha=FirstBeadMixtureAlpha;
+  lambda=FirstBeadMixtureLambda;
 
   // CBMC_INSERTION: new trial positions 'Trail[i]' for i=1,..,NumberOfTrialPositionsForTheFirstBead
   // CBMC_DELETION: new trial positions 'Trial[i]' for i=2,..,NumberOfTrialPositionsForTheFirstBead ('Trial[0]=FirstBeadPosition')
@@ -646,12 +789,13 @@ int HandleFirstBead(int Switch)
   // CBMC_RETRACE_REINSERTION: 'Trial[0]=FirstBeadPosition'
 
   if((Switch==CBMC_PARTIAL_INSERTION)||(Switch==CBMC_RETRACE_REINSERTION)) NumberOfFirstPositions=1;
+  else if((Switch==CBMC_INSERTION)&&(mode==FIRST_BEAD_SOFT_FILTER_MODE)) NumberOfFirstPositions=MIN2(NumberOfFirstBeadSoftFilterCandidates,MaxNumberOfTrialPositionsForTheFirstBead);
   else NumberOfFirstPositions=NumberOfTrialPositionsForTheFirstBead;
 
   if(Switch==CBMC_INSERTION)
   {
-    FirstBeadSelectionAttempts[CurrentSystem]+=1.0;
-    FirstBeadCandidateTrials[CurrentSystem]+=(REAL)NumberOfFirstPositions;
+    FirstBeadSelectionAttempts[mode][CurrentSystem]+=1.0;
+    FirstBeadCandidateTrials[mode][CurrentSystem]+=(REAL)NumberOfFirstPositions;
   }
 
   for(i=0;i<NumberOfFirstPositions;i++)
@@ -691,38 +835,48 @@ int HandleFirstBead(int Switch)
     EnergyHostChargeBondDipole=EnergyAdsorbateChargeBondDipole=EnergyCationChargeBondDipole=0.0;
 
     // calculate energies
-    if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[CurrentSystem]+=1.0;
+    if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[mode][CurrentSystem]+=1.0;
     EnergyHostVDW=CalculateFrameworkVDWEnergyAtPosition(posA,type,CFVDWScaling[start]);
-    if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[CurrentSystem]+=1.0;
+    if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[mode][CurrentSystem]+=1.0;
     CalculateFrameworkChargeEnergyAtPosition(posA,type,&EnergyHostChargeCharge,&EnergyHostChargeBondDipole,CFChargeScaling[start]);
 
     // compute VDW energy with adsorbates if no omit of adsorbate-adsorbate or the current molecule is a cation
     if(Components[CurrentComponent].ExtraFrameworkMolecule||(!OmitAdsorbateAdsorbateVDWInteractions))
     {
-      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[CurrentSystem]+=1.0;
+      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[mode][CurrentSystem]+=1.0;
       EnergyAdsorbateVDW=CalculateInterVDWEnergyAdsorbateAtPosition(posA,type,CurrentAdsorbateMolecule,CFVDWScaling[start]);
     }
      
     // compute Coulomb energy with adsorbates if no omit of adsorbate-adsorbate or the current molecule is a cation
     if(Components[CurrentComponent].ExtraFrameworkMolecule||(!OmitAdsorbateAdsorbateCoulombInteractions))
     {
-      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[CurrentSystem]+=1.0;
+      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[mode][CurrentSystem]+=1.0;
       CalculateInterChargeEnergyAdsorbateAtPosition(posA,type,&EnergyAdsorbateChargeCharge,&EnergyAdsorbateChargeBondDipole,CurrentAdsorbateMolecule,CFChargeScaling[start] * PseudoAtoms[type].Charge1);
     }
 
     // compute VDW energy with cations if no omit of cation-cation or the current molecule is an adsorbate
     if((!Components[CurrentComponent].ExtraFrameworkMolecule)||(!OmitCationCationVDWInteractions))
     {
-      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[CurrentSystem]+=1.0;
+      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[mode][CurrentSystem]+=1.0;
       EnergyCationVDW=CalculateInterVDWEnergyCationAtPosition(posA,type,CurrentCationMolecule,CFVDWScaling[start]);
     }
 
     // compute Coulomb energy with cations if no omit of cation-cation or the current molecule is an adsorbate
     if((!Components[CurrentComponent].ExtraFrameworkMolecule)||(!OmitCationCationCoulombInteractions))
     {
-      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[CurrentSystem]+=1.0;
+      if(Switch==CBMC_INSERTION) FirstBeadEnergyCalls[mode][CurrentSystem]+=1.0;
       CalculateInterChargeEnergyCationAtPosition(posA,type,&EnergyCationChargeCharge,&EnergyCationChargeBondDipole,CurrentCationMolecule,CFChargeScaling[start] * PseudoAtoms[type].Charge1);
     }
+
+#ifdef DEBUG
+    if((Switch==CBMC_INSERTION)||(Switch==CBMC_RETRACE_REINSERTION))
+    {
+      fprintf(stderr,
+              "CBMC first-bead candidate energy: switch=%d cand=%d pos=(%.12g,%.12g,%.12g) bead_type=%d cfvdw_scaling=%.12g host_vdw=%.12g adsorbate_vdw=%.12g\n",
+              Switch,i,(double)posA.x,(double)posA.y,(double)posA.z,type,(double)CFVDWScaling[start],
+              (double)EnergyHostVDW,(double)EnergyAdsorbateVDW);
+    }
+#endif
 
     if((EnergyHostVDW>=EnergyOverlapCriteria)||(EnergyHostChargeCharge>=EnergyOverlapCriteria)||
        (EnergyAdsorbateVDW>=EnergyOverlapCriteria)||(EnergyAdsorbateChargeCharge>=EnergyOverlapCriteria)||
@@ -730,7 +884,9 @@ int HandleFirstBead(int Switch)
     {
       // set overlap of trial positionm 'i' to TRUE
       Overlap[i]=TRUE;
-      if(Switch==CBMC_INSERTION) FirstBeadCandidateRejected[CurrentSystem]+=1.0;
+      NumberOfRejectedPositions++;
+      FirstBeadFrameworkEnergy[i]=NAN;
+      FirstBeadSoftLogWeight[i]=-DBL_MAX;
 
       // set OVERLAP such that it will be true when ALL trial position have overlap
       OVERLAP=OVERLAP&TRUE;
@@ -739,7 +895,7 @@ int HandleFirstBead(int Switch)
     {
       // set overlap of trial positionm 'i' to FALSE
       Overlap[i]=FALSE;
-      if(Switch==CBMC_INSERTION) FirstBeadCandidateValid[CurrentSystem]+=1.0;
+      NumberOfValidPositions++;
 
       // set OVERLAP such that it will be false when ONE trial position has no overlap
       OVERLAP=OVERLAP&FALSE;
@@ -759,6 +915,9 @@ int HandleFirstBead(int Switch)
       EnergiesHostBondDipoleBondDipole[i]=0.0;
       EnergiesAdsorbateBondDipoleBondDipole[i]=0.0;
       EnergiesCationBondDipoleBondDipole[i]=0.0;
+      FrameworkEnergy=EnergyHostVDW+EnergyHostChargeCharge+EnergyHostChargeBondDipole;
+      FirstBeadFrameworkEnergy[i]=FrameworkEnergy;
+      FirstBeadSoftLogWeight[i]=-alpha*Beta[CurrentSystem]*FrameworkEnergy;
 
       // set the Boltzmann factor for trial position 'i'
       if(BiasingMethod==LJ_BIASING)
@@ -772,61 +931,220 @@ int HandleFirstBead(int Switch)
     }
   }
 
+  if(Switch==CBMC_INSERTION)
+  {
+    FirstBeadCandidateRejected[mode][CurrentSystem]+=(REAL)NumberOfRejectedPositions;
+    FirstBeadCandidateValid[mode][CurrentSystem]+=(REAL)NumberOfValidPositions;
+  }
+
   // return when all trial-positions overlap
   if (OVERLAP)
   {
-    if(Switch==CBMC_INSERTION) FirstBeadWallTime[CurrentSystem]+=get_wall_time()-time0;
+    if(Switch==CBMC_INSERTION)
+    {
+      FirstBeadCurrentRetries[mode][CurrentSystem]+=1.0;
+      FirstBeadWallTime[mode][CurrentSystem]+=get_wall_time()-time0;
+    }
     return 0;
   }
 
-  // compute w_1=sum_m_i exp(-Beta u_1(m_i) i=1...f  Eq. 9 from Esselink et al.
-  RosenBluthFactorFirstBead=ComputeSumRosenbluthWeight(BoltzmannFactors,Overlap,NumberOfFirstPositions);
+  // compute w_1 from the same (possibly corrected) log-weights used to select first-bead candidates.
+  if((Switch==CBMC_INSERTION)&&(mode==FIRST_BEAD_SOFT_FILTER_MODE)&&(NumberOfFirstPositions>1))
+  {
+    int NumberOfValid;
+    REAL max_log,sum_exp,uniform_probability;
+
+    NumberOfValid=BuildFirstBeadMixtureProbabilities(FirstBeadSoftLogWeight,FirstBeadMixedProbability,Overlap,NumberOfFirstPositions,
+                                                     lambda,&LogSumWeight,&SumWeight);
+
+    max_log=-DBL_MAX;
+    for(i=0;i<NumberOfFirstPositions;i++)
+    {
+      if(!Overlap[i]&&isfinite(BoltzmannFactors[i]))
+        max_log=MAX2(max_log,BoltzmannFactors[i]);
+    }
+
+    if((NumberOfValid<=0)||(max_log<=-DBL_MAX/2.0))
+    {
+      for(i=0;i<NumberOfFirstPositions;i++)
+      {
+        if(!Overlap[i])
+        {
+          FirstBeadLogCorrection[i]=0.0;
+          FirstBeadModifiedBoltzmannFactor[i]=BoltzmannFactors[i];
+        }
+      }
+    }
+    else
+    {
+      sum_exp=0.0;
+      for(i=0;i<NumberOfFirstPositions;i++)
+      {
+        if(!Overlap[i]&&isfinite(BoltzmannFactors[i]))
+        {
+          FirstBeadBoltzmannProbability[i]=exp(BoltzmannFactors[i]-max_log);
+          sum_exp+=FirstBeadBoltzmannProbability[i];
+        }
+        else FirstBeadBoltzmannProbability[i]=0.0;
+      }
+
+      if((sum_exp<=0.0)||(!isfinite(sum_exp)))
+      {
+        uniform_probability=1.0/(REAL)NumberOfValid;
+        for(i=0;i<NumberOfFirstPositions;i++)
+        {
+          if(!Overlap[i])
+          {
+            FirstBeadBoltzmannProbability[i]=uniform_probability;
+            FirstBeadLogCorrection[i]=0.0;
+            FirstBeadModifiedBoltzmannFactor[i]=BoltzmannFactors[i];
+          }
+        }
+      }
+      else
+      {
+        for(i=0;i<NumberOfFirstPositions;i++)
+        {
+          if(!Overlap[i])
+          {
+            REAL correction;
+            FirstBeadBoltzmannProbability[i]/=sum_exp;
+            correction=FirstBeadMixedProbability[i]/FirstBeadBoltzmannProbability[i];
+            if((correction>0.0)&&isfinite(correction))
+            {
+              FirstBeadLogCorrection[i]=log(correction);
+              FirstBeadModifiedBoltzmannFactor[i]=BoltzmannFactors[i]+FirstBeadLogCorrection[i];
+            }
+            else
+            {
+              FirstBeadLogCorrection[i]=0.0;
+              FirstBeadModifiedBoltzmannFactor[i]=BoltzmannFactors[i];
+            }
+          }
+        }
+      }
+    }
+    SoftFilterBiasApplied=TRUE;
+#ifdef DEBUG
+    fprintf(stderr,"CBMC first-bead mixture proposal: alpha=%g lambda=%g valid=%d\n",(double)alpha,(double)lambda,NumberOfValid);
+    for(i=0;i<NumberOfFirstPositions;i++)
+    {
+      if(!Overlap[i])
+        fprintf(stderr,"  cand %d: U=%g logw_soft=%g p_boltz=%g p_mix=%g logcorr=%g modified_logw=%g\n",i,
+                (double)FirstBeadFrameworkEnergy[i],(double)FirstBeadSoftLogWeight[i],(double)FirstBeadBoltzmannProbability[i],
+                (double)FirstBeadMixedProbability[i],(double)FirstBeadLogCorrection[i],(double)FirstBeadModifiedBoltzmannFactor[i]);
+    }
+#endif
+  }
+  else
+  {
+    for(i=0;i<NumberOfFirstPositions;i++)
+    {
+      FirstBeadLogCorrection[i]=0.0;
+      FirstBeadModifiedBoltzmannFactor[i]=BoltzmannFactors[i];
+    }
+  }
+
+  RosenBluthFactorFirstBead=ComputeSumRosenbluthWeight(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
   if(Switch==CBMC_INSERTION)
   {
-    // select the trial position with the appropriate probability
-    i=SelectTrialPosition(BoltzmannFactors,Overlap,NumberOfFirstPositions);
+    SelectedFirstBeadIndex=SelectTrialPosition(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
+    SelectedLogWeight=FirstBeadModifiedBoltzmannFactor[SelectedFirstBeadIndex];
 
     // r=w_1(n)-exp(-beta U_1[h_n]) Eq.16 from Esselink et al.
-    StoredR=RosenBluthFactorFirstBead-exp(BoltzmannFactors[i]);
+    StoredR=RosenBluthFactorFirstBead-exp(FirstBeadModifiedBoltzmannFactor[SelectedFirstBeadIndex]);
   }
   else if(Switch==CBMC_RETRACE_REINSERTION)
   {
     // for retrace the first trial position is always "chosen"
-    i=0;
+    SelectedFirstBeadIndex=ExistingFirstBeadIndex;
 
     // w_1(o)=exp(-beta u_1(0)+r  Eq. 18 from Esselink et al.
     RosenBluthFactorFirstBead+=StoredR;
   }
   else
-    i=0;
+  {
+    SelectedFirstBeadIndex=ExistingFirstBeadIndex;
+  }
 
+  CoordinateCopyIndex=SelectedFirstBeadIndex;
+  EnergyCopyIndex=SelectedFirstBeadIndex;
+  LastFirstBeadSelectedIndex=SelectedFirstBeadIndex;
+
+#ifdef DEBUG
+  fprintf(stderr,
+          "CBMC first-bead indices: switch=%d selected_forward=%d retrace_or_reverse=%d coord_copy=%d energy_copy=%d soft_filter_bias_applied=%d\n",
+          Switch,(Switch==CBMC_INSERTION)?SelectedFirstBeadIndex:-1,
+          (Switch!=CBMC_INSERTION)?SelectedFirstBeadIndex:-1,
+          CoordinateCopyIndex,EnergyCopyIndex,SoftFilterBiasApplied);
+  fprintf(stderr,
+          "CBMC first-bead commit: switch=%d cand=%d pos=(%.12g,%.12g,%.12g) committed_host_vdw=%.12g committed_adsorbate_vdw=%.12g\n",
+          Switch,EnergyCopyIndex,
+          (double)Trial[CoordinateCopyIndex].x,(double)Trial[CoordinateCopyIndex].y,(double)Trial[CoordinateCopyIndex].z,
+          (double)EnergiesHostVDW[EnergyCopyIndex],(double)EnergiesAdsorbateVDW[EnergyCopyIndex]);
+#endif
+
+  if(Switch==CBMC_INSERTION)
+  {
+    REAL MaxLogWeight;
+    MaxLogWeight=-DBL_MAX;
+    for(i=0;i<NumberOfFirstPositions;i++)
+      if(!Overlap[i])
+        MaxLogWeight=MAX2(MaxLogWeight,FirstBeadModifiedBoltzmannFactor[i]);
+    if(MaxLogWeight>-DBL_MAX/2.0)
+    {
+      SumWeight=0.0;
+      for(i=0;i<NumberOfFirstPositions;i++)
+        if(!Overlap[i]) SumWeight+=exp(FirstBeadModifiedBoltzmannFactor[i]-MaxLogWeight);
+      LogSumWeight=MaxLogWeight+log(SumWeight);
+      SumWeight=exp(LogSumWeight);
+    }
+  }
   // update positions and energies
-  FirstBeadPosition=Trial[i];
+  FirstBeadPosition=Trial[CoordinateCopyIndex];
 
-  EnergyHostVDWFirstBead=EnergiesHostVDW[i];
-  EnergyAdsorbateVDWFirstBead=EnergiesAdsorbateVDW[i];
+  EnergyHostVDWFirstBead=EnergiesHostVDW[EnergyCopyIndex];
+  EnergyAdsorbateVDWFirstBead=EnergiesAdsorbateVDW[EnergyCopyIndex];
   
-  EnergyCationVDWFirstBead=EnergiesCationVDW[i];
+  EnergyCationVDWFirstBead=EnergiesCationVDW[EnergyCopyIndex];
 
-  EnergyHostChargeChargeFirstBead=EnergiesHostChargeCharge[i];
-  EnergyAdsorbateChargeChargeFirstBead=EnergiesAdsorbateChargeCharge[i];
-  EnergyCationChargeChargeFirstBead=EnergiesCationChargeCharge[i];
+  EnergyHostChargeChargeFirstBead=EnergiesHostChargeCharge[EnergyCopyIndex];
+  EnergyAdsorbateChargeChargeFirstBead=EnergiesAdsorbateChargeCharge[EnergyCopyIndex];
+  EnergyCationChargeChargeFirstBead=EnergiesCationChargeCharge[EnergyCopyIndex];
 
-  EnergyHostChargeBondDipoleFirstBead=EnergiesHostChargeBondDipole[i];
-  EnergyAdsorbateChargeBondDipoleFirstBead=EnergiesAdsorbateChargeBondDipole[i];
-  EnergyCationChargeBondDipoleFirstBead=EnergiesCationChargeBondDipole[i];
+  EnergyHostChargeBondDipoleFirstBead=EnergiesHostChargeBondDipole[EnergyCopyIndex];
+  EnergyAdsorbateChargeBondDipoleFirstBead=EnergiesAdsorbateChargeBondDipole[EnergyCopyIndex];
+  EnergyCationChargeBondDipoleFirstBead=EnergiesCationChargeBondDipole[EnergyCopyIndex];
 
   EnergyHostBondDipoleBondDipoleFirstBead=0.0;
   EnergyAdsorbateBondDipoleBondDipoleFirstBead=0.0;
   EnergyCationBondDipoleBondDipoleFirstBead=0.0;
 
   // normalize the Rosenbluth factor
-  if (Switch!=CBMC_PARTIAL_INSERTION) RosenBluthFactorFirstBead/=(REAL)NumberOfTrialPositionsForTheFirstBead;
+  if (Switch!=CBMC_PARTIAL_INSERTION) RosenBluthFactorFirstBead/=(REAL)NumberOfFirstPositions;
 
   // check if the Rosenbluth factor is reasonable; only for a new configuration
   if ((Switch==CBMC_INSERTION)&&(RosenBluthFactorFirstBead<MinimumRosenbluthFactor)) OVERLAP=TRUE;
 
-  if(Switch==CBMC_INSERTION) FirstBeadWallTime[CurrentSystem]+=get_wall_time()-time0;
+  if(Switch==CBMC_INSERTION)
+  {
+    FirstBeadSelectedLogWeightSum[mode][CurrentSystem]+=SelectedLogWeight;
+    FirstBeadSelectedLogWeightCount[mode][CurrentSystem]+=1.0;
+    FirstBeadLogSumWeightSum[mode][CurrentSystem]+=LogSumWeight;
+    FirstBeadWeightSum[mode][CurrentSystem]+=SumWeight;
+    if(!OVERLAP)
+    {
+      FirstBeadSuccessfulPlacements[mode][CurrentSystem]+=1.0;
+      FirstBeadRetriesBeforeSuccess[mode][CurrentSystem]+=FirstBeadCurrentRetries[mode][CurrentSystem];
+      FirstBeadCurrentRetries[mode][CurrentSystem]=0.0;
+    }
+    else FirstBeadCurrentRetries[mode][CurrentSystem]+=1.0;
+    FirstBeadWallTime[mode][CurrentSystem]+=get_wall_time()-time0;
+  }
+
+  // NOTE: this optional soft-filter mode alters the first-bead proposal distribution.
+  // It is only a prototype and must be accompanied by consistent Rosenbluth/acceptance
+  // corrections before production use. Do not assume thermodynamic correctness as-is.
 
   return 0;
 }
@@ -3035,6 +3353,12 @@ REAL RetraceMolecule(int Iicode)
     
     UAdsorbateVDWOld[CurrentSystem]=EnergyAdsorbateVDWFirstBead;
     UHostVDWOld[CurrentSystem]=EnergyHostVDWFirstBead;
+#ifdef DEBUG
+    fprintf(stderr,
+            "CBMC first-bead retrace commit-to-old: switch=%d idx=%d pos=(%.12g,%.12g,%.12g) UHostVDWOld=%.12g UAdsorbateVDWOld=%.12g\n",
+            Iicode,LastFirstBeadSelectedIndex,(double)FirstBeadPosition.x,(double)FirstBeadPosition.y,(double)FirstBeadPosition.z,
+            (double)UHostVDWOld[CurrentSystem],(double)UAdsorbateVDWOld[CurrentSystem]);
+#endif
 
     UCationChargeChargeOld[CurrentSystem]=EnergyCationChargeChargeFirstBead;
     UAdsorbateChargeChargeOld[CurrentSystem]=EnergyAdsorbateChargeChargeFirstBead;
@@ -3105,13 +3429,15 @@ REAL RetraceMolecule(int Iicode)
 REAL GrowMolecule(int Iicode)
 {
   int j,start;
+  int mode;
   REAL grow_time0;
   REAL UVDWCorrectionAdsorbate,UVDWCorrectionCation;
   REAL UVDWCorrectionFramework,UVDWCorrectionReplicasNew;
   REAL UChargeChargeCorrectionReplicasNew;
 
+  mode=UseFirstBeadSoftFilter?FIRST_BEAD_SOFT_FILTER_MODE:FIRST_BEAD_BASELINE_MODE;
   grow_time0=get_wall_time();
-  if(Iicode==CBMC_INSERTION) FullCBMCInsertionAttempts[CurrentSystem]+=1.0;
+  if(Iicode==CBMC_INSERTION) FullCBMCInsertionAttempts[mode][CurrentSystem]+=1.0;
 
   UBondNew[CurrentSystem]=0.0;
   UBendNew[CurrentSystem]=0.0;
@@ -3154,7 +3480,10 @@ REAL GrowMolecule(int Iicode)
     RosenbluthNew=RosenBluthFactorFirstBead;
     if(OVERLAP)
     {
-      if(Iicode==CBMC_INSERTION) FullCBMCInsertionWallTime[CurrentSystem]+=get_wall_time()-grow_time0;
+#ifdef DEBUG
+      fprintf(stderr,"CBMC first-bead chain growth failed after first-bead selection (selected=%d)\n",LastFirstBeadSelectedIndex);
+#endif
+      if(Iicode==CBMC_INSERTION) FullCBMCInsertionWallTime[mode][CurrentSystem]+=get_wall_time()-grow_time0;
       return 0;
     }
 
@@ -3162,6 +3491,12 @@ REAL GrowMolecule(int Iicode)
     UCationVDWNew[CurrentSystem]=EnergyCationVDWFirstBead;
     UAdsorbateVDWNew[CurrentSystem]=EnergyAdsorbateVDWFirstBead;
     UHostVDWNew[CurrentSystem]=EnergyHostVDWFirstBead;
+#ifdef DEBUG
+    fprintf(stderr,
+            "CBMC first-bead insertion commit-to-new: switch=%d idx=%d pos=(%.12g,%.12g,%.12g) UHostVDWNew=%.12g UAdsorbateVDWNew=%.12g\n",
+            Iicode,LastFirstBeadSelectedIndex,(double)FirstBeadPosition.x,(double)FirstBeadPosition.y,(double)FirstBeadPosition.z,
+            (double)UHostVDWNew[CurrentSystem],(double)UAdsorbateVDWNew[CurrentSystem]);
+#endif
 
     UCationChargeChargeNew[CurrentSystem]=EnergyCationChargeChargeFirstBead;
     UAdsorbateChargeChargeNew[CurrentSystem]=EnergyAdsorbateChargeChargeFirstBead;
@@ -3185,7 +3520,10 @@ REAL GrowMolecule(int Iicode)
 
   if (OVERLAP)
   {
-    if(Iicode==CBMC_INSERTION) FullCBMCInsertionWallTime[CurrentSystem]+=get_wall_time()-grow_time0;
+#ifdef DEBUG
+    fprintf(stderr,"CBMC full chain growth failed (selected first bead=%d)\n",LastFirstBeadSelectedIndex);
+#endif
+    if(Iicode==CBMC_INSERTION) FullCBMCInsertionWallTime[mode][CurrentSystem]+=get_wall_time()-grow_time0;
     return 0;
   }
 
@@ -3240,10 +3578,12 @@ REAL GrowMolecule(int Iicode)
 
   if(Iicode==CBMC_INSERTION)
   {
-    FullCBMCInsertionAccepted[CurrentSystem]+=1.0;
-    FullCBMCInsertionWallTime[CurrentSystem]+=get_wall_time()-grow_time0;
+    FullCBMCInsertionAccepted[mode][CurrentSystem]+=1.0;
+    FullCBMCInsertionWallTime[mode][CurrentSystem]+=get_wall_time()-grow_time0;
+#ifdef DEBUG
+    fprintf(stderr,"CBMC full chain growth succeeded (selected first bead=%d)\n",LastFirstBeadSelectedIndex);
+#endif
   }
-
   return RosenbluthNew;
 }
 
@@ -3764,20 +4104,7 @@ void RescaleMaximumRotationAnglesSmallMC(void)
 
 void InitializeSmallMCStatisticsAllSystems(void)
 {
-  int i,j,k;
-
-  for(k=0;k<NumberOfSystems;k++)
-  {
-    FirstBeadSelectionAttempts[k]=0.0;
-    FirstBeadCandidateTrials[k]=0.0;
-    FirstBeadEnergyCalls[k]=0.0;
-    FirstBeadCandidateRejected[k]=0.0;
-    FirstBeadCandidateValid[k]=0.0;
-    FirstBeadWallTime[k]=0.0;
-    FullCBMCInsertionAttempts[k]=0.0;
-    FullCBMCInsertionAccepted[k]=0.0;
-    FullCBMCInsertionWallTime[k]=0.0;
-  }
+  int i,j,k,m;
 
   for(i=0;i<NumberOfComponents;i++)
     for(j=0;j<Components[i].NumberOfAtoms;j++)
@@ -3796,58 +4123,27 @@ void InitializeSmallMCStatisticsAllSystems(void)
         Components[i].CBMCRotationOnConeAttempts[k][j]=0.0;
         Components[i].CBMCRotationOnConeAccepted[k][j]=0.0;
       }
-}
 
-
-void PrintFirstBeadWallTimeStatistics(FILE *FilePtr)
-{
-  REAL attempts,accepted,candidate_trials,candidate_valid;
-  REAL avg_trials,valid_fraction,acceptance_rate;
-  REAL avg_time_attempted,avg_time_accepted,accepted_per_second,avg_energy_per_accept;
-
-  attempts=FirstBeadSelectionAttempts[CurrentSystem];
-  accepted=FullCBMCInsertionAccepted[CurrentSystem];
-  candidate_trials=FirstBeadCandidateTrials[CurrentSystem];
-  candidate_valid=FirstBeadCandidateValid[CurrentSystem];
-
-  if(FullCBMCInsertionAttempts[CurrentSystem]>0.0)
-  {
-    avg_trials=candidate_trials/MAX2(attempts,1.0);
-    valid_fraction=candidate_valid/MAX2(candidate_trials,1.0);
-    acceptance_rate=accepted/MAX2(FullCBMCInsertionAttempts[CurrentSystem],1.0);
-    avg_time_attempted=FullCBMCInsertionWallTime[CurrentSystem]/MAX2(FullCBMCInsertionAttempts[CurrentSystem],1.0);
-    accepted_per_second=accepted/MAX2(FullCBMCInsertionWallTime[CurrentSystem],1e-30);
-    avg_energy_per_accept=FirstBeadEnergyCalls[CurrentSystem]/MAX2(accepted,1.0);
-    avg_time_accepted=FullCBMCInsertionWallTime[CurrentSystem]/MAX2(accepted,1.0);
-  }
-  else
-  {
-    avg_trials=0.0;
-    valid_fraction=0.0;
-    acceptance_rate=0.0;
-    avg_time_attempted=0.0;
-    accepted_per_second=0.0;
-    avg_energy_per_accept=0.0;
-    avg_time_accepted=0.0;
-  }
-
-  fprintf(FilePtr,"First-bead CBMC instrumentation (vanilla wall-time)\n");
-  fprintf(FilePtr,"====================================================\n");
-  fprintf(FilePtr,"\n");
-  fprintf(FilePtr,"Mode: baseline\n");
-  fprintf(FilePtr,"\tfirst-bead insertion attempts                : %.0f\n",(double)attempts);
-  fprintf(FilePtr,"\taverage first-bead trials/attempt            : %g\n",(double)avg_trials);
-  fprintf(FilePtr,"\tfirst-bead valid-candidate fraction          : %g\n",(double)valid_fraction);
-  fprintf(FilePtr,"\tfirst-bead rejected candidates               : %.0f\n",(double)FirstBeadCandidateRejected[CurrentSystem]);
-  fprintf(FilePtr,"\tfull CBMC insertion acceptance rate          : %g\n",(double)acceptance_rate);
-  fprintf(FilePtr,"\taverage CPU time per attempted insertion [s] : %g\n",(double)avg_time_attempted);
-  fprintf(FilePtr,"\taverage CPU time per accepted insertion [s]  : %g\n",(double)avg_time_accepted);
-  fprintf(FilePtr,"\taccepted insertions per second               : %g\n",(double)accepted_per_second);
-  fprintf(FilePtr,"\tenergy evaluations per accepted insertion    : %g\n",(double)avg_energy_per_accept);
-  fprintf(FilePtr,"\ttotal time in HandleFirstBead [s]            : %g\n",(double)FirstBeadWallTime[CurrentSystem]);
-  fprintf(FilePtr,"\ttotal energy evaluations in HandleFirstBead  : %.0f\n",(double)FirstBeadEnergyCalls[CurrentSystem]);
-  fprintf(FilePtr,"\ttotal full CBMC insertion wall time [s]      : %g\n",(double)FullCBMCInsertionWallTime[CurrentSystem]);
-  fprintf(FilePtr,"\n\n");
+  for(m=0;m<NUMBER_OF_FIRST_BEAD_MODES;m++)
+    for(k=0;k<NumberOfSystems;k++)
+    {
+      FirstBeadSelectionAttempts[m][k]=0.0;
+      FirstBeadCandidateTrials[m][k]=0.0;
+      FirstBeadCandidateRejected[m][k]=0.0;
+      FirstBeadCandidateValid[m][k]=0.0;
+      FirstBeadSelectedLogWeightSum[m][k]=0.0;
+      FirstBeadSelectedLogWeightCount[m][k]=0.0;
+      FirstBeadLogSumWeightSum[m][k]=0.0;
+      FirstBeadWeightSum[m][k]=0.0;
+      FirstBeadEnergyCalls[m][k]=0.0;
+      FirstBeadWallTime[m][k]=0.0;
+      FirstBeadRetriesBeforeSuccess[m][k]=0.0;
+      FirstBeadSuccessfulPlacements[m][k]=0.0;
+      FirstBeadCurrentRetries[m][k]=0.0;
+      FullCBMCInsertionAttempts[m][k]=0.0;
+      FullCBMCInsertionAccepted[m][k]=0.0;
+      FullCBMCInsertionWallTime[m][k]=0.0;
+    }
 }
 
 void PrintSmallMCAddStatistics(FILE *FilePtr)
@@ -3901,6 +4197,86 @@ void PrintSmallMCAddStatistics(FILE *FilePtr)
     }
   }
   fprintf(FilePtr,"\n\n");
+}
+
+void PrintFirstBeadSelectionStatistics(FILE *FilePtr)
+{
+  int m;
+  REAL attempts,accepted,candidate_trials,candidate_valid;
+  REAL avg_trials,valid_fraction,acceptance_rate;
+  REAL avg_time_attempted,avg_time_accepted,accepted_per_second;
+  REAL avg_energy_per_accept,avg_selected_logw,avg_logsumw;
+  REAL avg_retries;
+
+  fprintf(FilePtr,"First-bead CBMC instrumentation (prototype)\n");
+  fprintf(FilePtr,"===========================================\n");
+  fprintf(FilePtr,"mode enabled: %s (soft-filter K=%d)\n",UseFirstBeadSoftFilter?"soft-filter":"baseline",NumberOfFirstBeadSoftFilterCandidates);
+  fprintf(FilePtr,"mixture parameters: alpha=%g lambda=%g\n",(double)FirstBeadMixtureAlpha,(double)FirstBeadMixtureLambda);
+  fprintf(FilePtr,"NOTE: soft-filter changes first-bead proposals; do not use for production without full Rosenbluth/acceptance corrections.\n\n");
+
+  for(m=0;m<NUMBER_OF_FIRST_BEAD_MODES;m++)
+  {
+    attempts=FirstBeadSelectionAttempts[m][CurrentSystem];
+    accepted=FullCBMCInsertionAccepted[m][CurrentSystem];
+    candidate_trials=FirstBeadCandidateTrials[m][CurrentSystem];
+    candidate_valid=FirstBeadCandidateValid[m][CurrentSystem];
+
+    if(attempts>0.0)
+    {
+      avg_trials=candidate_trials/attempts;
+      valid_fraction=candidate_valid/MAX2(candidate_trials,1.0);
+      avg_selected_logw=FirstBeadSelectedLogWeightSum[m][CurrentSystem]/MAX2(FirstBeadSelectedLogWeightCount[m][CurrentSystem],1.0);
+      avg_logsumw=FirstBeadLogSumWeightSum[m][CurrentSystem]/attempts;
+      avg_retries=FirstBeadRetriesBeforeSuccess[m][CurrentSystem]/MAX2(FirstBeadSuccessfulPlacements[m][CurrentSystem],1.0);
+      avg_time_attempted=FullCBMCInsertionWallTime[m][CurrentSystem]/MAX2(FullCBMCInsertionAttempts[m][CurrentSystem],1.0);
+      acceptance_rate=accepted/MAX2(FullCBMCInsertionAttempts[m][CurrentSystem],1.0);
+      accepted_per_second=accepted/MAX2(FullCBMCInsertionWallTime[m][CurrentSystem],1e-30);
+      avg_energy_per_accept=FirstBeadEnergyCalls[m][CurrentSystem]/MAX2(accepted,1.0);
+      avg_time_accepted=FullCBMCInsertionWallTime[m][CurrentSystem]/MAX2(accepted,1.0);
+    }
+    else
+    {
+      avg_trials=valid_fraction=acceptance_rate=0.0;
+      avg_time_attempted=avg_time_accepted=accepted_per_second=0.0;
+      avg_energy_per_accept=avg_selected_logw=avg_logsumw=avg_retries=0.0;
+    }
+
+    fprintf(FilePtr,"Mode: %s\n",(m==FIRST_BEAD_SOFT_FILTER_MODE)?"soft-filter":"baseline");
+    fprintf(FilePtr,"\tfirst-bead insertion attempts                : %.0f\n",(double)attempts);
+    fprintf(FilePtr,"\taverage first-bead trials/attempt            : %g\n",(double)avg_trials);
+    fprintf(FilePtr,"\tfirst-bead valid-candidate fraction          : %g\n",(double)valid_fraction);
+    fprintf(FilePtr,"\tfirst-bead rejected candidates               : %.0f\n",(double)FirstBeadCandidateRejected[m][CurrentSystem]);
+    fprintf(FilePtr,"\tselected candidate <log-weight>              : %g\n",(double)avg_selected_logw);
+    fprintf(FilePtr,"\taverage log-sum-exp(log-weight)              : %g\n",(double)avg_logsumw);
+    fprintf(FilePtr,"\taccumulated weight sum                       : %g\n",(double)FirstBeadWeightSum[m][CurrentSystem]);
+    fprintf(FilePtr,"\taverage retries before successful first bead : %g\n",(double)avg_retries);
+    fprintf(FilePtr,"\tfull CBMC insertion acceptance rate          : %g\n",(double)acceptance_rate);
+    fprintf(FilePtr,"\taverage CPU time per attempted insertion [s] : %g\n",(double)avg_time_attempted);
+    fprintf(FilePtr,"\taverage CPU time per accepted insertion [s]  : %g\n",(double)avg_time_accepted);
+    fprintf(FilePtr,"\taccepted insertions per second               : %g\n",(double)accepted_per_second);
+    fprintf(FilePtr,"\tenergy evaluations per accepted insertion    : %g\n",(double)avg_energy_per_accept);
+    fprintf(FilePtr,"\ttotal time in HandleFirstBead [s]            : %g\n",(double)FirstBeadWallTime[m][CurrentSystem]);
+    fprintf(FilePtr,"\ttotal energy evaluations in HandleFirstBead  : %.0f\n",(double)FirstBeadEnergyCalls[m][CurrentSystem]);
+    fprintf(FilePtr,"\n");
+  }
+
+  if((FullCBMCInsertionAccepted[FIRST_BEAD_BASELINE_MODE][CurrentSystem]>0.0)&&
+     (FullCBMCInsertionAccepted[FIRST_BEAD_SOFT_FILTER_MODE][CurrentSystem]>0.0))
+  {
+    REAL base_t,soft_t,base_e,soft_e;
+    base_t=FullCBMCInsertionWallTime[FIRST_BEAD_BASELINE_MODE][CurrentSystem]/
+           MAX2(FullCBMCInsertionAccepted[FIRST_BEAD_BASELINE_MODE][CurrentSystem],1.0);
+    soft_t=FullCBMCInsertionWallTime[FIRST_BEAD_SOFT_FILTER_MODE][CurrentSystem]/
+           MAX2(FullCBMCInsertionAccepted[FIRST_BEAD_SOFT_FILTER_MODE][CurrentSystem],1.0);
+    base_e=FirstBeadEnergyCalls[FIRST_BEAD_BASELINE_MODE][CurrentSystem]/
+           MAX2(FullCBMCInsertionAccepted[FIRST_BEAD_BASELINE_MODE][CurrentSystem],1.0);
+    soft_e=FirstBeadEnergyCalls[FIRST_BEAD_SOFT_FILTER_MODE][CurrentSystem]/
+           MAX2(FullCBMCInsertionAccepted[FIRST_BEAD_SOFT_FILTER_MODE][CurrentSystem],1.0);
+    fprintf(FilePtr,"Soft-filter vs baseline ratios (when both are sampled)\n");
+    fprintf(FilePtr,"\tCPU time per accepted insertion ratio        : %g\n",(double)(soft_t/MAX2(base_t,1e-30)));
+    fprintf(FilePtr,"\tenergy evaluations per accepted ratio        : %g\n",(double)(soft_e/MAX2(base_e,1e-30)));
+    fprintf(FilePtr,"\n");
+  }
 }
 
 static int versionNumber=1;
@@ -3979,15 +4355,41 @@ void AllocateCBMCMemory(void)
 
   MaxTrial=MAX3(MaxNumberOfTrialPositions,NumberOfTrialPositionsTorsion,MaxNumberOfTrialPositionsForTheFirstBead);
 
-  FirstBeadWallTime=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FirstBeadEnergyCalls=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FirstBeadSelectionAttempts=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FirstBeadCandidateTrials=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FirstBeadCandidateRejected=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FirstBeadCandidateValid=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FullCBMCInsertionAttempts=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FullCBMCInsertionAccepted=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
-  FullCBMCInsertionWallTime=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+  FirstBeadSelectionAttempts=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadCandidateTrials=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadCandidateRejected=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadCandidateValid=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSelectedLogWeightSum=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSelectedLogWeightCount=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadLogSumWeightSum=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadWeightSum=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadEnergyCalls=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadWallTime=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadRetriesBeforeSuccess=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSuccessfulPlacements=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadCurrentRetries=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FullCBMCInsertionAttempts=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FullCBMCInsertionAccepted=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FullCBMCInsertionWallTime=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  for(i=0;i<NUMBER_OF_FIRST_BEAD_MODES;i++)
+  {
+    FirstBeadSelectionAttempts[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadCandidateTrials[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadCandidateRejected[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadCandidateValid[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSelectedLogWeightSum[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSelectedLogWeightCount[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadLogSumWeightSum[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadWeightSum[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadEnergyCalls[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadWallTime[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadRetriesBeforeSuccess[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSuccessfulPlacements[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadCurrentRetries[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FullCBMCInsertionAttempts[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FullCBMCInsertionAccepted[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FullCBMCInsertionWallTime[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+  }
 
   RosenbluthTorsion=(REAL*)calloc(NumberOfTrialPositionsTorsion,sizeof(REAL));
 
@@ -4033,6 +4435,12 @@ void AllocateCBMCMemory(void)
   BoltzmannFactors=(REAL*)calloc(MaxTrial,sizeof(REAL));
   Overlap=(int*)calloc(MaxTrial,sizeof(REAL));
   ShiftedBoltzmannFactors=(REAL*)calloc(MaxTrial,sizeof(REAL));
+  FirstBeadFrameworkEnergy=(REAL*)calloc(MaxTrial,sizeof(REAL));
+  FirstBeadSoftLogWeight=(REAL*)calloc(MaxTrial,sizeof(REAL));
+  FirstBeadBoltzmannProbability=(REAL*)calloc(MaxTrial,sizeof(REAL));
+  FirstBeadMixedProbability=(REAL*)calloc(MaxTrial,sizeof(REAL));
+  FirstBeadLogCorrection=(REAL*)calloc(MaxTrial,sizeof(REAL));
+  FirstBeadModifiedBoltzmannFactor=(REAL*)calloc(MaxTrial,sizeof(REAL));
 
   Trial=(VECTOR*)calloc(MaxTrial,sizeof(VECTOR));
 
