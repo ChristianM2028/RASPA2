@@ -72,7 +72,7 @@ REAL CalculateFrameworkVDWEnergyAtPosition(POINT posA,int typeA,REAL scaling)
   {
     if((Framework[CurrentSystem].FrameworkModel==GRID)&&(VDWGrid[typeA]))   // grid-interpolating for rigid frameworks
     {
-      UVDW=scaling*InterpolateVDWGrid(typeA,posA);
+      UVDW=InterpolateVDWGrid(typeA,posA);
       return UVDW;
     }
     else if(UseCellLists[CurrentSystem]) // energy using cell-lists

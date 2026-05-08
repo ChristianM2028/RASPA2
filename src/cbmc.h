@@ -254,7 +254,7 @@ void MakeInitialCations(int n,int type);
 void RescaleMaximumRotationAnglesSmallMC(void);
 void InitializeSmallMCStatisticsAllSystems(void);
 void PrintSmallMCAddStatistics(FILE *FilePtr);
-void PrintFirstBeadSelectionStatistics(FILE *FilePtr);
+void PrintFirstBeadWallTimeStatistics(FILE *FilePtr);
 
 void CheckConfigMoves(void);
 
