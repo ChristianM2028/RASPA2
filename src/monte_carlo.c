@@ -885,17 +885,20 @@ void MonteCarloSimulation(void)
           // Added by Ambroise de Izarra
           //-------------------------------------------------------------------
           else if(ran<Components[CurrentComponent].ProbabilityAlchemicalTransformationMove)
+          {
+            cpu_before=get_cpu_time();
             AlchemicalChangeAdsorbateMove();
+            cpu_after=get_cpu_time();
+            CpuTimeAlchemicalChangeMove[CurrentSystem]+=(cpu_after-cpu_before);
+          }
           else if(ran<Components[CurrentComponent].ProbabilityWidomOsmostatCalculationMove)
+          {
+            cpu_before=get_cpu_time();
             WidomOsmostatCalculation();
+            cpu_after=get_cpu_time();
+            CpuTimeWidomOsmostatChangeMove[CurrentSystem]+=(cpu_after-cpu_before);
+          }
           //-------------------------------------------------------------------
-		  else if(ran<Components[CurrentComponent].ProbabilityWidomOsmostatCalculationMove)
-		  {
-			cpu_before=get_cpu_time();
-			WidomOsmostatCalculation();
-			cpu_after=get_cpu_time();
-			CpuTimeWidomOsmostatChangeMove[CurrentSystem]+=(cpu_after-cpu_before);
-		  }
           else if(ran<Components[CurrentComponent].ProbabilityHybridNVEMove) 
           {
             cpu_before=get_cpu_time();

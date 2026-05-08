@@ -12361,8 +12361,8 @@ int HyperParallelTemperingMove(void)
   }
 
   cpu_after=get_cpu_time();
-  CpuTimeParallelTemperingMove[SystemA]+=0.5*(cpu_after-cpu_before);
-  CpuTimeParallelTemperingMove[SystemB]+=0.5*(cpu_after-cpu_before);
+  CpuTimeHyperParallelTemperingMove[SystemA]+=0.5*(cpu_after-cpu_before);
+  CpuTimeHyperParallelTemperingMove[SystemB]+=0.5*(cpu_after-cpu_before);
   return 0;
 }
 
@@ -12613,8 +12613,8 @@ int ParallelMolFractionMove(void)
     SWAP(DegreesOfFreedomConstraintCations[SystemA],DegreesOfFreedomConstraintCations[SystemB],temp_real);
   }
   cpu_after=get_cpu_time();
-  CpuTimeParallelTemperingMove[SystemA]+=0.5*(cpu_after-cpu_before);
-  CpuTimeParallelTemperingMove[SystemB]+=0.5*(cpu_after-cpu_before);
+  CpuTimeParallelMolFractionMove[SystemA]+=0.5*(cpu_after-cpu_before);
+  CpuTimeParallelMolFractionMove[SystemB]+=0.5*(cpu_after-cpu_before);
   return 0;
 }
 
