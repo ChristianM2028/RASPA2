@@ -6526,6 +6526,7 @@ void PrintCPUStatistics(FILE *FilePtr)
   REAL CpuTimeHybridNPHPRMoveTotal,CpuTimeVolumeChangeMoveTotal,CpuTimeBoxShapeChangeMoveTotal;
   REAL CpuTimeGibbsVolumeChangeMoveTotal,CpuTimeFrameworkChangeMoveTotal,CpuTimeFrameworkShiftMoveTotal;
   REAL CpuTimeCFCRXMCLambdaChangeMoveTotal;
+  REAL ComponentMoveTotal,SystemParticleMoveTotal,SystemMoveTotal,GrandParticleMoveTotal,GrandSystemMoveTotal;
 
   CpuTimeTranslationMove=0.0;
   CpuTimeRandomTranslationMove=0.0;
@@ -6592,6 +6593,33 @@ void PrintCPUStatistics(FILE *FilePtr)
     fprintf(FilePtr,"\tChange Gibs-lambda value:           %18.10g [s]\n",Components[i].CpuTimeCFGibbsLambdaChangeMove[CurrentSystem]);
     fprintf(FilePtr,"\tConvert Gibbs fract. to integer:    %18.10g [s]\n",Components[i].CpuTimeCFGibbsFractionalToIntegerMove[CurrentSystem]);
 
+    ComponentMoveTotal=Components[i].CpuTimeTranslationMove[CurrentSystem]+
+      Components[i].CpuTimeRandomTranslationMove[CurrentSystem]+
+      Components[i].CpuTimeRotationMove[CurrentSystem]+
+      Components[i].CpuTimeRandomRotationMove[CurrentSystem]+
+      Components[i].CpuTimePartialReinsertionMove[CurrentSystem]+
+      Components[i].CpuTimeReinsertionMove[CurrentSystem]+
+      Components[i].CpuTimeReinsertionInPlaceMove[CurrentSystem]+
+      Components[i].CpuTimeReinsertionInPlaneMove[CurrentSystem]+
+      Components[i].CpuTimeIdentityChangeMove[CurrentSystem]+
+      Components[i].CpuTimeSwapMoveInsertion[CurrentSystem]+
+      Components[i].CpuTimeSwapMoveDeletion[CurrentSystem]+
+      Components[i].CpuTimeCFSwapLambdaMove[CurrentSystem]+
+      Components[i].CpuTimeCBCFSwapLambdaMove[CurrentSystem]+
+      Components[i].CpuTimeWidomMove[CurrentSystem]+
+      Components[i].CpuTimeCFWidomLambdaMove[CurrentSystem]+
+      Components[i].CpuTimeGibbsWidomMove[CurrentSystem]+
+      Components[i].CpuTimeSurfaceAreaMove[CurrentSystem]+
+      Components[i].CpuTimeGibbsChangeMove[CurrentSystem]+
+      Components[i].CpuTimeCFGibbsChangeMove[CurrentSystem]+
+      Components[i].CpuTimeCBCFGibbsChangeMove[CurrentSystem]+
+      Components[i].CpuTimeGibbsIdentityChangeMove[CurrentSystem]+
+      Components[i].CpuTimeExchangeFractionalParticleMove[CurrentSystem]+
+      Components[i].CpuTimeCFGibbsSwapFractionalMoleculeToOtherBoxMove[CurrentSystem]+
+      Components[i].CpuTimeCFGibbsLambdaChangeMove[CurrentSystem]+
+      Components[i].CpuTimeCFGibbsFractionalToIntegerMove[CurrentSystem];
+    fprintf(FilePtr,"\ttotal for component:                %18.10g [s]\n",ComponentMoveTotal);
+
     CpuTimeTranslationMove+=Components[i].CpuTimeTranslationMove[CurrentSystem];
     CpuTimeRandomTranslationMove+=Components[i].CpuTimeRandomTranslationMove[CurrentSystem];
     CpuTimeRotationMove+=Components[i].CpuTimeRotationMove[CurrentSystem];
@@ -6645,6 +6673,16 @@ void PrintCPUStatistics(FILE *FilePtr)
   fprintf(FilePtr,"\tSwap Gibbs-fractional molecules:    %18.10g [s]\n",CpuTimeCFGibbsSwapFractionalMoleculeToOtherBoxMove);
   fprintf(FilePtr,"\tChange Gibs-lambda value:           %18.10g [s]\n",CpuTimeCFGibbsLambdaChangeMove);
   fprintf(FilePtr,"\tConvert Gibbs fract. to integer:    %18.10g [s]\n",CpuTimeCFGibbsFractionalToIntegerMove);
+  SystemParticleMoveTotal=CpuTimeTranslationMove+CpuTimeRandomTranslationMove+CpuTimeRotationMove+
+    CpuTimeRandomRotationMove+CpuTimePartialReinsertionMove+CpuTimeReinsertionMove+
+    CpuTimeReinsertionInPlaceMove+CpuTimeReinsertionInPlaneMove+CpuTimeIdentityChangeMove+
+    CpuTimeSwapMoveInsertion+CpuTimeSwapMoveDeletion+CpuTimeCFSwapLambdaMove+
+    CpuTimeCBCFSwapLambdaMove+CpuTimeWidomMove+CpuTimeCFWidomLambdaMove+CpuTimeGibbsWidomMove+
+    CpuTimeSurfaceAreaMove+CpuTimeGibbsChangeMove+CpuTimeCFGibbsChangeMove+
+    CpuTimeCBCFGibbsChangeMove+CpuTimeGibbsIdentityChangeMove+CpuTimeExchangeFractionalParticleMove+
+    CpuTimeCFGibbsSwapFractionalMoleculeToOtherBoxMove+CpuTimeCFGibbsLambdaChangeMove+
+    CpuTimeCFGibbsFractionalToIntegerMove;
+  fprintf(FilePtr,"\ttotal particle moves:               %18.10g [s]\n",SystemParticleMoveTotal);
 
   fprintf(FilePtr,"\nSystem moves:\n");
   fprintf(FilePtr,"\tparallel tempering:            %18.10g [s]\n",CpuTimeParallelTemperingMove[CurrentSystem]);
@@ -6665,6 +6703,16 @@ void PrintCPUStatistics(FILE *FilePtr)
   fprintf(FilePtr,"\tframework change:              %18.10g [s]\n",CpuTimeFrameworkChangeMove[CurrentSystem]);
   fprintf(FilePtr,"\tframework shift:               %18.10g [s]\n",CpuTimeFrameworkShiftMove[CurrentSystem]);
   fprintf(FilePtr,"\treaction MC move:              %18.10g [s]\n",CpuTimeCFCRXMCLambdaChangeMove[CurrentSystem]);
+  SystemMoveTotal=CpuTimeParallelTemperingMove[CurrentSystem]+CpuTimeHyperParallelTemperingMove[CurrentSystem]+
+    CpuTimeParallelMolFractionMove[CurrentSystem]+CpuTimeChiralInversionMove[CurrentSystem]+
+    CpuTimeHybridNVEMove[CurrentSystem]+CpuTimeAlchemicalChangeMove[CurrentSystem]+
+    CpuTimeWidomOsmostatChangeMove[CurrentSystem]+CpuTimeHybridNPHMove[CurrentSystem]+
+    CpuTimeHybridNPHPRMove[CurrentSystem]+CpuTimeVolumeChangeMove[CurrentSystem]+
+    CpuTimeBoxShapeChangeMove[CurrentSystem]+CpuTimeGibbsVolumeChangeMove[CurrentSystem]+
+    CpuTimeFrameworkChangeMove[CurrentSystem]+CpuTimeFrameworkShiftMove[CurrentSystem]+
+    CpuTimeCFCRXMCLambdaChangeMove[CurrentSystem];
+  fprintf(FilePtr,"\ttotal system moves:            %18.10g [s]\n",SystemMoveTotal);
+  fprintf(FilePtr,"\nTotal MC move runtime for current system: %18.10g [s]\n",SystemParticleMoveTotal+SystemMoveTotal);
   fprintf(FilePtr,"\n");
 
 
@@ -6755,6 +6803,16 @@ void PrintCPUStatistics(FILE *FilePtr)
   fprintf(FilePtr,"\tSwap Gibbs-fractional molecules:    %18.10g [s]\n",CpuTimeCFGibbsSwapFractionalMoleculeToOtherBoxMove);
   fprintf(FilePtr,"\tChange Gibs-lambda value:           %18.10g [s]\n",CpuTimeCFGibbsLambdaChangeMove);
   fprintf(FilePtr,"\tConvert Gibbs fract. to integer:    %18.10g [s]\n",CpuTimeCFGibbsFractionalToIntegerMove);
+  GrandParticleMoveTotal=CpuTimeTranslationMove+CpuTimeRandomTranslationMove+CpuTimeRotationMove+
+    CpuTimeRandomRotationMove+CpuTimePartialReinsertionMove+CpuTimeReinsertionMove+
+    CpuTimeReinsertionInPlaceMove+CpuTimeReinsertionInPlaneMove+CpuTimeIdentityChangeMove+
+    CpuTimeSwapMoveInsertion+CpuTimeSwapMoveDeletion+CpuTimeCFSwapLambdaMove+
+    CpuTimeCBCFSwapLambdaMove+CpuTimeWidomMove+CpuTimeCFWidomLambdaMove+CpuTimeGibbsWidomMove+
+    CpuTimeSurfaceAreaMove+CpuTimeGibbsChangeMove+CpuTimeCFGibbsChangeMove+
+    CpuTimeCBCFGibbsChangeMove+CpuTimeGibbsIdentityChangeMove+CpuTimeExchangeFractionalParticleMove+
+    CpuTimeCFGibbsSwapFractionalMoleculeToOtherBoxMove+CpuTimeCFGibbsLambdaChangeMove+
+    CpuTimeCFGibbsFractionalToIntegerMove;
+  fprintf(FilePtr,"\ttotal particle moves:               %18.10g [s]\n",GrandParticleMoveTotal);
 
   CpuTimeParallelTemperingMoveTotal=0.0;
   CpuTimeHyperParallelTemperingMoveTotal=0.0;
@@ -6815,6 +6873,15 @@ void PrintCPUStatistics(FILE *FilePtr)
   fprintf(FilePtr,"\tframework change:              %18.10g [s]\n",CpuTimeFrameworkChangeMoveTotal);
   fprintf(FilePtr,"\tframework shift:               %18.10g [s]\n",CpuTimeFrameworkShiftMoveTotal);
   fprintf(FilePtr,"\treaction MC move:              %18.10g [s]\n",CpuTimeCFCRXMCLambdaChangeMoveTotal);
+  GrandSystemMoveTotal=CpuTimeParallelTemperingMoveTotal+CpuTimeHyperParallelTemperingMoveTotal+
+    CpuTimeParallelMolFractionMoveTotal+CpuTimeChiralInversionMoveTotal+CpuTimeHybridNVEMoveTotal+
+    CpuTimeAlchemicalChangeMoveTotal+CpuTimeWidomOsmostatChangeMoveTotal+CpuTimeHybridNPHMoveTotal+
+    CpuTimeHybridNPHPRMoveTotal+CpuTimeVolumeChangeMoveTotal+CpuTimeBoxShapeChangeMoveTotal+
+    CpuTimeGibbsVolumeChangeMoveTotal+CpuTimeFrameworkChangeMoveTotal+CpuTimeFrameworkShiftMoveTotal+
+    CpuTimeCFCRXMCLambdaChangeMoveTotal;
+  fprintf(FilePtr,"\ttotal system moves:            %18.10g [s]\n",GrandSystemMoveTotal);
+  fprintf(FilePtr,"\nTotal MC move runtime over all systems and components: %18.10g [s]\n",
+      GrandParticleMoveTotal+GrandSystemMoveTotal);
   fprintf(FilePtr,"\n");
 }
 
