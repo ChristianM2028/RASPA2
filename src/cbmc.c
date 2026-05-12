@@ -134,6 +134,14 @@ static REAL **FirstBeadCurrentRetries;
 static REAL **FullCBMCInsertionAttempts;
 static REAL **FullCBMCInsertionAccepted;
 static REAL **FullCBMCInsertionWallTime;
+static REAL **FirstBeadSoftProposalCheckCount;
+static REAL **FirstBeadSoftProposalCheckAbsErrorSum;
+static REAL **FirstBeadSoftProposalCheckMaxAbsError;
+static REAL **FirstBeadSoftProposalBaselineAbsDeviationSum;
+static REAL **FirstBeadSoftProposalBaselineMaxAbsDeviation;
+static REAL **FirstBeadSoftProposalSelectedLogRatioSum;
+static REAL **FirstBeadSoftProposalSelectedLogRatioCount;
+static REAL **FirstBeadSoftProposalInvalidCorrectionCount;
 static REAL *FirstBeadFrameworkEnergy;
 static REAL *FirstBeadSoftLogWeight;
 static REAL *FirstBeadBoltzmannProbability;
@@ -1019,6 +1027,7 @@ int HandleFirstBead(int Switch)
             {
               FirstBeadLogCorrection[i]=0.0;
               FirstBeadModifiedBoltzmannFactor[i]=BoltzmannFactors[i];
+              FirstBeadSoftProposalInvalidCorrectionCount[mode][CurrentSystem]+=1.0;
             }
           }
         }
@@ -1050,6 +1059,51 @@ int HandleFirstBead(int Switch)
   {
     SelectedFirstBeadIndex=SelectTrialPosition(FirstBeadModifiedBoltzmannFactor,Overlap,NumberOfFirstPositions);
     SelectedLogWeight=FirstBeadModifiedBoltzmannFactor[SelectedFirstBeadIndex];
+
+    if(SoftFilterBiasApplied)
+    {
+      REAL max_modified,sum_modified,p_modified,abs_error,baseline_deviation;
+      max_modified=-DBL_MAX;
+      for(i=0;i<NumberOfFirstPositions;i++)
+        if(!Overlap[i]&&isfinite(FirstBeadModifiedBoltzmannFactor[i]))
+          max_modified=MAX2(max_modified,FirstBeadModifiedBoltzmannFactor[i]);
+
+      if(max_modified>-DBL_MAX/2.0)
+      {
+        sum_modified=0.0;
+        for(i=0;i<NumberOfFirstPositions;i++)
+        {
+          if(!Overlap[i]&&isfinite(FirstBeadModifiedBoltzmannFactor[i]))
+            sum_modified+=exp(FirstBeadModifiedBoltzmannFactor[i]-max_modified);
+        }
+
+        if((sum_modified>0.0)&&isfinite(sum_modified))
+        {
+          for(i=0;i<NumberOfFirstPositions;i++)
+          {
+            if(!Overlap[i])
+            {
+              p_modified=exp(FirstBeadModifiedBoltzmannFactor[i]-max_modified)/sum_modified;
+              abs_error=fabs(p_modified-FirstBeadMixedProbability[i]);
+              baseline_deviation=fabs(FirstBeadMixedProbability[i]-FirstBeadBoltzmannProbability[i]);
+              FirstBeadSoftProposalCheckCount[mode][CurrentSystem]+=1.0;
+              FirstBeadSoftProposalCheckAbsErrorSum[mode][CurrentSystem]+=abs_error;
+              FirstBeadSoftProposalCheckMaxAbsError[mode][CurrentSystem]=MAX2(FirstBeadSoftProposalCheckMaxAbsError[mode][CurrentSystem],abs_error);
+              FirstBeadSoftProposalBaselineAbsDeviationSum[mode][CurrentSystem]+=baseline_deviation;
+              FirstBeadSoftProposalBaselineMaxAbsDeviation[mode][CurrentSystem]=MAX2(FirstBeadSoftProposalBaselineMaxAbsDeviation[mode][CurrentSystem],baseline_deviation);
+            }
+          }
+        }
+      }
+
+      if((!Overlap[SelectedFirstBeadIndex])&&(FirstBeadMixedProbability[SelectedFirstBeadIndex]>0.0)&&
+         (FirstBeadBoltzmannProbability[SelectedFirstBeadIndex]>0.0))
+      {
+        FirstBeadSoftProposalSelectedLogRatioSum[mode][CurrentSystem]+=log(FirstBeadMixedProbability[SelectedFirstBeadIndex]/
+                                                                          FirstBeadBoltzmannProbability[SelectedFirstBeadIndex]);
+        FirstBeadSoftProposalSelectedLogRatioCount[mode][CurrentSystem]+=1.0;
+      }
+    }
 
     // r=w_1(n)-exp(-beta U_1[h_n]) Eq.16 from Esselink et al.
     StoredR=RosenBluthFactorFirstBead-exp(FirstBeadModifiedBoltzmannFactor[SelectedFirstBeadIndex]);
@@ -4143,6 +4197,14 @@ void InitializeSmallMCStatisticsAllSystems(void)
       FullCBMCInsertionAttempts[m][k]=0.0;
       FullCBMCInsertionAccepted[m][k]=0.0;
       FullCBMCInsertionWallTime[m][k]=0.0;
+      FirstBeadSoftProposalCheckCount[m][k]=0.0;
+      FirstBeadSoftProposalCheckAbsErrorSum[m][k]=0.0;
+      FirstBeadSoftProposalCheckMaxAbsError[m][k]=0.0;
+      FirstBeadSoftProposalBaselineAbsDeviationSum[m][k]=0.0;
+      FirstBeadSoftProposalBaselineMaxAbsDeviation[m][k]=0.0;
+      FirstBeadSoftProposalSelectedLogRatioSum[m][k]=0.0;
+      FirstBeadSoftProposalSelectedLogRatioCount[m][k]=0.0;
+      FirstBeadSoftProposalInvalidCorrectionCount[m][k]=0.0;
     }
 }
 
@@ -4207,6 +4269,7 @@ void PrintFirstBeadSelectionStatistics(FILE *FilePtr)
   REAL avg_time_attempted,avg_time_accepted,accepted_per_second;
   REAL avg_energy_per_accept,avg_selected_logw,avg_logsumw;
   REAL avg_retries;
+  REAL check_count,avg_soft_abs_error,avg_baseline_deviation,avg_selected_log_ratio;
 
   fprintf(FilePtr,"First-bead CBMC instrumentation (prototype)\n");
   fprintf(FilePtr,"===========================================\n");
@@ -4240,6 +4303,11 @@ void PrintFirstBeadSelectionStatistics(FILE *FilePtr)
       avg_time_attempted=avg_time_accepted=accepted_per_second=0.0;
       avg_energy_per_accept=avg_selected_logw=avg_logsumw=avg_retries=0.0;
     }
+    check_count=FirstBeadSoftProposalCheckCount[m][CurrentSystem];
+    avg_soft_abs_error=FirstBeadSoftProposalCheckAbsErrorSum[m][CurrentSystem]/MAX2(check_count,1.0);
+    avg_baseline_deviation=FirstBeadSoftProposalBaselineAbsDeviationSum[m][CurrentSystem]/MAX2(check_count,1.0);
+    avg_selected_log_ratio=FirstBeadSoftProposalSelectedLogRatioSum[m][CurrentSystem]/
+                           MAX2(FirstBeadSoftProposalSelectedLogRatioCount[m][CurrentSystem],1.0);
 
     fprintf(FilePtr,"Mode: %s\n",(m==FIRST_BEAD_SOFT_FILTER_MODE)?"soft-filter":"baseline");
     fprintf(FilePtr,"\tfirst-bead insertion attempts                : %.0f\n",(double)attempts);
@@ -4257,6 +4325,22 @@ void PrintFirstBeadSelectionStatistics(FILE *FilePtr)
     fprintf(FilePtr,"\tenergy evaluations per accepted insertion    : %g\n",(double)avg_energy_per_accept);
     fprintf(FilePtr,"\ttotal time in HandleFirstBead [s]            : %g\n",(double)FirstBeadWallTime[m][CurrentSystem]);
     fprintf(FilePtr,"\ttotal energy evaluations in HandleFirstBead  : %.0f\n",(double)FirstBeadEnergyCalls[m][CurrentSystem]);
+    if(m==FIRST_BEAD_SOFT_FILTER_MODE)
+    {
+      fprintf(FilePtr,"\tsoft proposal checks                         : %.0f\n",(double)check_count);
+      fprintf(FilePtr,"\tavg |p_modified - p_mix|                    : %g\n",(double)avg_soft_abs_error);
+      fprintf(FilePtr,"\tmax |p_modified - p_mix|                    : %g\n",(double)FirstBeadSoftProposalCheckMaxAbsError[m][CurrentSystem]);
+      fprintf(FilePtr,"\tavg |p_mix - p_baseline|                    : %g\n",(double)avg_baseline_deviation);
+      fprintf(FilePtr,"\tmax |p_mix - p_baseline|                    : %g\n",(double)FirstBeadSoftProposalBaselineMaxAbsDeviation[m][CurrentSystem]);
+      fprintf(FilePtr,"\tselected <log(p_mix/p_baseline)>            : %g\n",(double)avg_selected_log_ratio);
+      fprintf(FilePtr,"\tinvalid soft proposal corrections            : %.0f\n",(double)FirstBeadSoftProposalInvalidCorrectionCount[m][CurrentSystem]);
+      fprintf(FilePtr,"\tMH forward proposal algebra check            : %s\n",
+              (check_count<=0.0)?"not sampled":
+              ((FirstBeadSoftProposalCheckMaxAbsError[m][CurrentSystem]<1e-10)?"OK":"DEVIATED"));
+      fprintf(FilePtr,"\tMH reverse soft proposal evaluated           : no\n");
+      fprintf(FilePtr,"\tMH acceptance q_reverse/q_forward included   : no\n");
+      fprintf(FilePtr,"\tMH correction completeness                    : INCOMPLETE (diagnostic only)\n");
+    }
     fprintf(FilePtr,"\n");
   }
 
@@ -4371,6 +4455,14 @@ void AllocateCBMCMemory(void)
   FullCBMCInsertionAttempts=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
   FullCBMCInsertionAccepted=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
   FullCBMCInsertionWallTime=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalCheckCount=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalCheckAbsErrorSum=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalCheckMaxAbsError=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalBaselineAbsDeviationSum=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalBaselineMaxAbsDeviation=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalSelectedLogRatioSum=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalSelectedLogRatioCount=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
+  FirstBeadSoftProposalInvalidCorrectionCount=(REAL**)calloc(NUMBER_OF_FIRST_BEAD_MODES,sizeof(REAL*));
   for(i=0;i<NUMBER_OF_FIRST_BEAD_MODES;i++)
   {
     FirstBeadSelectionAttempts[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
@@ -4389,6 +4481,14 @@ void AllocateCBMCMemory(void)
     FullCBMCInsertionAttempts[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
     FullCBMCInsertionAccepted[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
     FullCBMCInsertionWallTime[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalCheckCount[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalCheckAbsErrorSum[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalCheckMaxAbsError[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalBaselineAbsDeviationSum[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalBaselineMaxAbsDeviation[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalSelectedLogRatioSum[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalSelectedLogRatioCount[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
+    FirstBeadSoftProposalInvalidCorrectionCount[i]=(REAL*)calloc(NumberOfSystems,sizeof(REAL));
   }
 
   RosenbluthTorsion=(REAL*)calloc(NumberOfTrialPositionsTorsion,sizeof(REAL));
