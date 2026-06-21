@@ -6499,6 +6499,7 @@ void PrintPostSimulationStatus(void)
     fprintf(FilePtr,"===========================================================================\n");
     fprintf(FilePtr,"\n");
     PrintSmallMCAddStatistics(FilePtr);
+    PrintFirstBeadSelectionStatistics(FilePtr);
     PrintTranslationStatistics(FilePtr);
     PrintRandomTranslationStatistics(FilePtr);
     PrintRotationStatistics(FilePtr);
@@ -7271,11 +7272,19 @@ void PrintEnergyDriftStatus(FILE *FilePtr)
 
   fprintf(FilePtr,"===================================================================\n");
   fprintf(FilePtr,"Total energy-drift: %lg\n",(double)(UTotalRunning-UTotal[CurrentSystem])*ENERGY_TO_KELVIN);
+  fprintf(FilePtr,"[ENERGY_DRIFT_DETAILS] UTotalRunning: %18.12lf\n",(double)UTotalRunning);
+  fprintf(FilePtr,"[ENERGY_DRIFT_DETAILS] UTotal[CurrentSystem]: %18.12lf\n",(double)UTotal[CurrentSystem]);
+  fprintf(FilePtr,"[ENERGY_DRIFT_DETAILS] (UTotalRunning-UTotal[CurrentSystem]): %18.12lf\n",
+                  (double)(UTotalRunning-UTotal[CurrentSystem]));
+  fprintf(FilePtr,"[ENERGY_DRIFT_DETAILS] ENERGY_TO_KELVIN: %18.12lf\n",(double)ENERGY_TO_KELVIN);
+  fprintf(FilePtr,"[ENERGY_DRIFT_DETAILS] fabs(drift)*ENERGY_TO_KELVIN: %18.12lf\n",
+                  (double)(fabs(UTotalRunning-UTotal[CurrentSystem])*ENERGY_TO_KELVIN));
+  fprintf(FilePtr,"[ENERGY_DRIFT_DETAILS] warning-threshold[K]: %18.12lf\n",1.0e-2);
   fprintf(FilePtr,"\n\n");
 
   if(fabs(UTotalRunning-UTotal[CurrentSystem])*ENERGY_TO_KELVIN>1e-2)
   {
-    if(NumberOfWarnings[NumberOfWarnings[CurrentSystem]]<MAX_NUMBER_OF_WARNINGS)
+    if(NumberOfWarnings[CurrentSystem]<MAX_NUMBER_OF_WARNINGS)
     {
       Warnings[CurrentSystem][NumberOfWarnings[CurrentSystem]]=ENERGY_DRIFT;
       NumberOfWarnings[CurrentSystem]++;

@@ -4000,6 +4000,11 @@ int PartialReinsertionAdsorbateMove(void)
     UAdsorbateCationVDW[CurrentSystem]+=UCationVDWNew[CurrentSystem]-UCationVDWOld[CurrentSystem];
     UHostAdsorbate[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
     UHostAdsorbateVDW[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
+#ifdef DEBUG
+    fprintf(stderr,"CBMC Host/Adsorbate VDW running update: UHostVDWNew=%g UHostVDWOld=%g delta=%g running=%g\n",
+            (double)UHostVDWNew[CurrentSystem],(double)UHostVDWOld[CurrentSystem],
+            (double)(UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem]),(double)UHostAdsorbateVDW[CurrentSystem]);
+#endif
 
     UHostPolarization[CurrentSystem]=UHostPolarizationNew[CurrentSystem];
     UAdsorbatePolarization[CurrentSystem]=UAdsorbatePolarizationNew[CurrentSystem]+UPolarizationNew[CurrentSystem];
@@ -4575,6 +4580,11 @@ int ReinsertionAdsorbateMove(void)
     UAdsorbateCationVDW[CurrentSystem]+=UCationVDWNew[CurrentSystem]-UCationVDWOld[CurrentSystem];
     UHostAdsorbate[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
     UHostAdsorbateVDW[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
+#ifdef DEBUG
+    fprintf(stderr,"CBMC Host/Adsorbate VDW running update: UHostVDWNew=%g UHostVDWOld=%g delta=%g running=%g\n",
+            (double)UHostVDWNew[CurrentSystem],(double)UHostVDWOld[CurrentSystem],
+            (double)(UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem]),(double)UHostAdsorbateVDW[CurrentSystem]);
+#endif
 
     UHostPolarization[CurrentSystem]=UHostPolarizationNew[CurrentSystem];
     UAdsorbatePolarization[CurrentSystem]=UAdsorbatePolarizationNew[CurrentSystem]+UPolarizationNew[CurrentSystem];
@@ -5136,6 +5146,11 @@ int ReinsertionInPlaceAdsorbateMove(void)
     UAdsorbateCationVDW[CurrentSystem]+=UCationVDWNew[CurrentSystem]-UCationVDWOld[CurrentSystem];
     UHostAdsorbate[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
     UHostAdsorbateVDW[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
+#ifdef DEBUG
+    fprintf(stderr,"CBMC Host/Adsorbate VDW running update: UHostVDWNew=%g UHostVDWOld=%g delta=%g running=%g\n",
+            (double)UHostVDWNew[CurrentSystem],(double)UHostVDWOld[CurrentSystem],
+            (double)(UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem]),(double)UHostAdsorbateVDW[CurrentSystem]);
+#endif
 
     UHostPolarization[CurrentSystem]=UHostPolarizationNew[CurrentSystem];
     UAdsorbatePolarization[CurrentSystem]=UAdsorbatePolarizationNew[CurrentSystem];
@@ -5747,6 +5762,11 @@ int ReinsertionInPlaneAdsorbateMove(void)
     UAdsorbateCationVDW[CurrentSystem]+=UCationVDWNew[CurrentSystem]-UCationVDWOld[CurrentSystem];
     UHostAdsorbate[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
     UHostAdsorbateVDW[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
+#ifdef DEBUG
+    fprintf(stderr,"CBMC Host/Adsorbate VDW running update: UHostVDWNew=%g UHostVDWOld=%g delta=%g running=%g\n",
+            (double)UHostVDWNew[CurrentSystem],(double)UHostVDWOld[CurrentSystem],
+            (double)(UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem]),(double)UHostAdsorbateVDW[CurrentSystem]);
+#endif
 
     UHostPolarization[CurrentSystem]=UHostPolarizationNew[CurrentSystem];
     UAdsorbatePolarization[CurrentSystem]=UAdsorbatePolarizationNew[CurrentSystem]+UPolarizationNew[CurrentSystem];
@@ -7957,6 +7977,11 @@ int IdentityChangeAdsorbateMove(void)
     UAdsorbateCationVDW[CurrentSystem]+=UCationVDWNew[CurrentSystem]-UCationVDWOld[CurrentSystem];
     UHostAdsorbate[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
     UHostAdsorbateVDW[CurrentSystem]+=UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem];
+#ifdef DEBUG
+    fprintf(stderr,"CBMC Host/Adsorbate VDW running update: UHostVDWNew=%g UHostVDWOld=%g delta=%g running=%g\n",
+            (double)UHostVDWNew[CurrentSystem],(double)UHostVDWOld[CurrentSystem],
+            (double)(UHostVDWNew[CurrentSystem]-UHostVDWOld[CurrentSystem]),(double)UHostAdsorbateVDW[CurrentSystem]);
+#endif
 
     UHostPolarization[CurrentSystem]=UHostPolarizationNew[CurrentSystem];
     UAdsorbatePolarization[CurrentSystem]=UAdsorbatePolarizationNew[CurrentSystem]+UPolarizationNew[CurrentSystem];

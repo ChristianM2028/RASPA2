@@ -254,6 +254,7 @@ void MakeInitialCations(int n,int type);
 void RescaleMaximumRotationAnglesSmallMC(void);
 void InitializeSmallMCStatisticsAllSystems(void);
 void PrintSmallMCAddStatistics(FILE *FilePtr);
+void PrintFirstBeadSelectionStatistics(FILE *FilePtr);
 
 void CheckConfigMoves(void);
 
@@ -262,4 +263,3 @@ void AllocateCBMCMemory(void);
 void ReadRestartCBMC(FILE *FilePtr);
 
 #endif
-
